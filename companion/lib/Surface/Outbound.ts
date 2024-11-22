@@ -38,12 +38,12 @@ export class SurfaceOutboundController {
 		this.#io = io
 
 		// TODO - initial config
-		this.#registerPlugin('elgato', new SurfacePluginElgatoStreamDeckOutboundManager())
+		this.#registerPlugin('streamdeck', new SurfacePluginElgatoStreamDeckOutboundManager())
 	}
 
 	#registerPlugin(pluginType: string, plugin: SurfaceOutboundPluginBase<any>): void {
 		plugin.on('connected', (panel) => {
-			this.#controller.createSurfaceHandler(panel.info.deviceId, `${pluginType}-outbound`, panel)
+			this.#controller.createSurfaceHandler(panel.info.deviceId, pluginType, panel)
 		})
 		this.#outboundPlugins.set(pluginType, plugin)
 	}

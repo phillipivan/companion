@@ -22,10 +22,10 @@ export class SurfacePluginXKeysManager implements SurfacePluginBase<SurfacePlugi
 
 	#config: SurfacePluginXKeysConfig = cloneDeep(this.DefaultConfig)
 
-	readonly #props: SurfacePluginProps
+	// readonly #props: SurfacePluginProps
 
-	constructor(props: SurfacePluginProps) {
-		this.#props = props
+	constructor(_props: SurfacePluginProps) {
+		// this.#props = props
 	}
 
 	readonly #openSurfaces = new OpenSurfacesManager<SurfaceUSBXKeys>()

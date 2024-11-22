@@ -58,7 +58,7 @@ export class SurfacePluginElgatoStreamDeckOutboundManager
 		this.#streamdeckManager.disconnectFromAll()
 	}
 
-	updateConfig(config: SurfacePluginElgatoStreamDeckOutboundConfig): void {
+	updateConfig(_config: SurfacePluginElgatoStreamDeckOutboundConfig): void {
 		// const oldConfig = this.#config
 		// this.#config = config
 		// TODO - react to change

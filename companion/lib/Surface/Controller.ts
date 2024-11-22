@@ -25,7 +25,6 @@ import { SurfaceHandler, getSurfaceName } from './Handler.js'
 import { SurfaceIPElgatoEmulator, EmulatorRoom } from './IP/ElgatoEmulator.js'
 import { SurfaceIPElgatoPlugin } from './IP/ElgatoPlugin.js'
 import { SurfaceIPSatellite, SatelliteDeviceInfo } from './IP/Satellite.js'
-import { SurfaceUSBElgatoStreamDeck } from './Plugins/ElgatoStreamDeck.js'
 import { SurfaceIPVideohubPanel, VideohubPanelDeviceInfo } from './IP/VideohubPanel.js'
 import { SurfaceGroup } from './Group.js'
 import { SurfaceOutboundController } from './Outbound.js'
@@ -37,7 +36,6 @@ import type {
 	SurfacesUpdate,
 } from '@companion-app/shared/Model/Surfaces.js'
 import type { ClientSocket, UIHandler } from '../UI/Handler.js'
-import type { StreamDeckTcp } from '@elgato-stream-deck/tcp'
 import type { ServiceElgatoPluginSocket } from '../Service/ElgatoPlugin.js'
 import type { CompanionVariableValues } from '@companion-module/base'
 import type { SurfaceHandlerDependencies, SurfacePanel } from './Types.js'
@@ -91,7 +89,7 @@ export class SurfaceController extends EventEmitter<SurfaceControllerEvents> {
 	/**
 	 * All the opened and active surfaces
 	 */
-	readonly #surfaceHandlers = new Map<string, SurfaceHandler | null>()
+	readonly #surfaceHandlers = new Map<string, SurfaceHandler>()
 
 	/**
 	 * The surface groups wrapping the surface handlers
