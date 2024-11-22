@@ -21,24 +21,18 @@ import jsonPatch from 'fast-json-patch'
 import { cloneDeep } from 'lodash-es'
 import { nanoid } from 'nanoid'
 import pDebounce from 'p-debounce'
-import { getBlackmagicControllerDeviceInfo } from '@blackmagic-controller/node'
 import { usb } from 'usb'
-import shuttleControlUSB from 'shuttle-control-usb'
 import { listLoupedecks, LoupedeckModelId } from '@loupedeck/node'
 import { SurfaceHandler, getSurfaceName } from './Handler.js'
 import { SurfaceIPElgatoEmulator, EmulatorRoom } from './IP/ElgatoEmulator.js'
 import { SurfaceIPElgatoPlugin } from './IP/ElgatoPlugin.js'
 import { SurfaceIPSatellite, SatelliteDeviceInfo } from './IP/Satellite.js'
 import { SurfaceUSBElgatoStreamDeck } from './USB/ElgatoStreamDeck.js'
-import { SurfaceUSBInfinitton } from './USB/Infinitton.js'
-import { SurfaceUSBXKeys } from './USB/XKeys.js'
 import { SurfaceUSBLoupedeckLive } from './USB/LoupedeckLive.js'
 import { SurfaceUSBLoupedeckCt } from './USB/LoupedeckCt.js'
-import { SurfaceUSBContourShuttle } from './USB/ContourShuttle.js'
 import { SurfaceIPVideohubPanel, VideohubPanelDeviceInfo } from './IP/VideohubPanel.js'
 import { SurfaceGroup } from './Group.js'
 import { SurfaceOutboundController } from './Outbound.js'
-import { SurfaceUSBBlackmagicController } from './USB/BlackmagicController.js'
 import { VARIABLE_UNKNOWN_VALUE } from '../Variables/Util.js'
 import type {
 	ClientDevicesListItem,
@@ -60,6 +54,10 @@ import { SurfacePluginElgatoStreamDeckManager } from './Plugins/ElgatoStreamDeck
 import { SurfacePluginFrameworkMacropadManager } from './Plugins/FrameworkMacropadManager.js'
 import { SurfacePlugin203SystemsMystrixManager } from './Plugins/203SystemsMystrixManager.js'
 import { SurfacePluginVECFootpedalManager } from './Plugins/VECFootpedalManager.js'
+import { SurfacePluginInfinittonManager } from './Plugins/InfinittonManager.js'
+import { SurfacePluginBlackmagicControllerManager } from './Plugins/BlackmagicControllerManager.js'
+import { SurfacePluginContourShuttleManager } from './Plugins/ContourShuttleManager.js'
+import { SurfacePluginXKeysManager } from './Plugins/XKeysManager.js'
 
 // Force it to load the hidraw driver just in case
 HID.setDriverType('hidraw')
@@ -144,10 +142,15 @@ export class SurfaceController extends EventEmitter<SurfaceControllerEvents> {
 			executeExpression: this.#surfaceExecuteExpression.bind(this),
 		}
 
+		// TODO - pass in config after construction
 		this.#surfacePlugins.set('streamdeck', new SurfacePluginElgatoStreamDeckManager(surfacePluginProps))
 		this.#surfacePlugins.set('framework-macropad', new SurfacePluginFrameworkMacropadManager(surfacePluginProps))
 		this.#surfacePlugins.set('203-mystrix', new SurfacePlugin203SystemsMystrixManager(surfacePluginProps))
 		this.#surfacePlugins.set('vec-footpedal', new SurfacePluginVECFootpedalManager(surfacePluginProps))
+		this.#surfacePlugins.set('infinitton', new SurfacePluginInfinittonManager(surfacePluginProps))
+		this.#surfacePlugins.set('blackmagic-controller', new SurfacePluginBlackmagicControllerManager(surfacePluginProps))
+		this.#surfacePlugins.set('contour-shuttle', new SurfacePluginContourShuttleManager(surfacePluginProps))
+		this.#surfacePlugins.set('xkeys', new SurfacePluginXKeysManager(surfacePluginProps))
 
 		this.#outboundController = new SurfaceOutboundController(this, db, io)
 
@@ -876,45 +879,7 @@ export class SurfaceController extends EventEmitter<SurfaceControllerEvents> {
 							})
 						)
 					}),
-					HID.devicesAsync().then(async (deviceInfos) =>
-						Promise.allSettled(
-							deviceInfos.map(async (deviceInfo) => {
-								if (deviceInfo.path && !this.#surfaceHandlers.has(deviceInfo.path)) {
-									if (
-										deviceInfo.vendorId === 0xffff &&
-										(deviceInfo.productId === 0x1f40 || deviceInfo.productId === 0x1f41)
-									) {
-										await this.#addDevice(deviceInfo.path, {}, 'infinitton', SurfaceUSBInfinitton)
-									} else if (deviceInfo.vendorId === 1523 && deviceInfo.interface === 0) {
-										if (this.#handlerDependencies.userconfig.getKey('xkeys_enable')) {
-											await this.#addDevice(
-												deviceInfo.path,
-												{
-													useLegacyLayout: !!this.#handlerDependencies.userconfig.getKey('xkeys_legacy_layout'),
-												},
-												'xkeys',
-												SurfaceUSBXKeys
-											)
-										}
-									} else if (
-										deviceInfo.vendorId === shuttleControlUSB.vids.CONTOUR &&
-										(deviceInfo.productId === shuttleControlUSB.pids.SHUTTLEXPRESS ||
-											deviceInfo.productId === shuttleControlUSB.pids.SHUTTLEPRO_V1 ||
-											deviceInfo.productId === shuttleControlUSB.pids.SHUTTLEPRO_V2)
-									) {
-										if (this.#handlerDependencies.userconfig.getKey('contour_shuttle_enable')) {
-											await this.#addDevice(deviceInfo.path, {}, 'contour-shuttle', SurfaceUSBContourShuttle)
-										}
-									} else if (
-										this.#handlerDependencies.userconfig.getKey('blackmagic_controller_enable') &&
-										getBlackmagicControllerDeviceInfo(deviceInfo)
-									) {
-										await this.#addDevice(deviceInfo.path, {}, 'blackmagic-controller', SurfaceUSBBlackmagicController)
-									}
-								}
-							})
-						)
-					),
+
 					scanForLoupedeck
 						? listLoupedecks().then((deviceInfos) =>
 								Promise.allSettled(
