@@ -54,10 +54,6 @@ export class SurfacePluginBlackmagicControllerManager
 		return openedSurfaces.filter((v) => !!v)
 	}
 
-	detectedSurfaces(devices: Array<unknown>): Promise<SurfacePanel[]> {
-		throw new Error('Method not implemented.')
-	}
-
 	updateConfig(config: SurfacePluginBlackmagicControllerConfig): void {
 		// const oldConfig = this.#config
 		this.#config = config

@@ -45,10 +45,6 @@ export class SurfacePluginInfinittonManager implements SurfacePluginBase<Surface
 		return openedSurfaces.filter((v) => !!v)
 	}
 
-	detectedSurfaces(devices: Array<unknown>): Promise<SurfacePanel[]> {
-		throw new Error('Method not implemented.')
-	}
-
 	updateConfig(_config: SurfacePluginInfinittonConfig): void {
 		// const oldConfig = this.#config
 		// this.#config = config

@@ -45,10 +45,6 @@ export class SurfacePlugin203SystemsMystrixManager implements SurfacePluginBase<
 		return openedSurfaces.filter((v) => !!v)
 	}
 
-	detectedSurfaces(devices: Array<unknown>): Promise<SurfacePanel[]> {
-		throw new Error('Method not implemented.')
-	}
-
 	updateConfig(_config: SurfacePlugin203SystemsMystrixConfig): void {
 		// const oldConfig = this.#config
 		// this.#config = config

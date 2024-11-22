@@ -53,10 +53,6 @@ export class SurfacePluginContourShuttleManager implements SurfacePluginBase<Sur
 		return openedSurfaces.filter((v) => !!v)
 	}
 
-	detectedSurfaces(devices: Array<unknown>): Promise<SurfacePanel[]> {
-		throw new Error('Method not implemented.')
-	}
-
 	updateConfig(config: SurfacePluginContourShuttleConfig): void {
 		// const oldConfig = this.#config
 		this.#config = config

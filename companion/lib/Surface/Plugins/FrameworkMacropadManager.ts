@@ -45,10 +45,6 @@ export class SurfacePluginFrameworkMacropadManager implements SurfacePluginBase<
 		return openedSurfaces.filter((v) => !!v)
 	}
 
-	detectedSurfaces(devices: Array<unknown>): Promise<SurfacePanel[]> {
-		throw new Error('Method not implemented.')
-	}
-
 	updateConfig(_config: SurfacePluginFrameworkMacropadConfig): void {
 		// const oldConfig = this.#config
 		// this.#config = config

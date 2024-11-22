@@ -16,11 +16,11 @@ export interface SurfacePluginBase<TConfig extends object | null> {
 	 */
 	refreshSurfaces(): Promise<SurfacePanel[]>
 
-	/**
-	 * Devices have been detected via hotplug, attempt to open any that are not already open
-	 * @param devices
-	 */
-	detectedSurfaces(devices: Array<unknown>): Promise<SurfacePanel[]>
+	// /**
+	//  * Devices have been detected via hotplug, attempt to open any that are not already open
+	//  * @param devices
+	//  */
+	// detectedSurfaces(devices: Array<unknown>): Promise<SurfacePanel[]>
 }
 
 export interface SurfacePluginProps {

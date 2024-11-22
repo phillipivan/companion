@@ -52,10 +52,6 @@ export class SurfacePluginElgatoStreamDeckManager implements SurfacePluginBase<S
 		return openedSurfaces.filter((v) => !!v)
 	}
 
-	detectedSurfaces(devices: Array<unknown>): Promise<SurfacePanel[]> {
-		throw new Error('Method not implemented.')
-	}
-
 	updateConfig(config: SurfacePluginElgatoStreamDeckConfig): void {
 		// const oldConfig = this.#config
 		this.#config = config

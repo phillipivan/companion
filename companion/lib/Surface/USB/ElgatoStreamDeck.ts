@@ -22,7 +22,7 @@ import imageRs from '@julusian/image-rs'
 import LogController, { Logger } from '../../Log/Controller.js'
 import { ImageWriteQueue } from '../../Resources/ImageWriteQueue.js'
 import { transformButtonImage } from '../../Resources/Util.js'
-import { colorToRgb } from './Util.js'
+import { colorToRgb } from '../Plugins/Util.js'
 import {
 	OffsetConfigFields,
 	BrightnessConfigField,

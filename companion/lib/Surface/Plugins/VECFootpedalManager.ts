@@ -53,10 +53,6 @@ export class SurfacePluginVECFootpedalManager implements SurfacePluginBase<Surfa
 		return openedSurfaces.filter((v) => !!v)
 	}
 
-	detectedSurfaces(devices: Array<unknown>): Promise<SurfacePanel[]> {
-		throw new Error('Method not implemented.')
-	}
-
 	updateConfig(config: SurfacePluginVECFootpedalConfig): void {
 		// const oldConfig = this.#config
 		this.#config = config

@@ -1,4 +1,3 @@
-// @ts-check
 /*
  * This file is part of the Companion project
  * Copyright (c) 2018 Bitfocus AS
