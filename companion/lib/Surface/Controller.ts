@@ -22,7 +22,6 @@ import jsonPatch from 'fast-json-patch'
 import { cloneDeep } from 'lodash-es'
 import { nanoid } from 'nanoid'
 import pDebounce from 'p-debounce'
-import { getStreamDeckDeviceInfo } from '@elgato-stream-deck/node'
 import { getBlackmagicControllerDeviceInfo } from '@blackmagic-controller/node'
 import { usb } from 'usb'
 import shuttleControlUSB from 'shuttle-control-usb'
@@ -62,6 +61,8 @@ import { createOrSanitizeSurfaceHandlerConfig } from './Config.js'
 import { EventEmitter } from 'events'
 import LogController from '../Log/Controller.js'
 import type { DataDatabase } from '../Data/Database.js'
+import { SurfacePluginBase, SurfacePluginProps } from './Plugins/Base.js'
+import { SurfacePluginElgatoStreamDeckManager } from './Plugins/ElgatoStreamDeckManager.js'
 
 // Force it to load the hidraw driver just in case
 HID.setDriverType('hidraw')
@@ -133,12 +134,20 @@ export class SurfaceController extends EventEmitter<SurfaceControllerEvents> {
 
 	readonly #outboundController: SurfaceOutboundController
 
+	readonly #surfacePlugins = new Map<string, SurfacePluginBase<any>>()
+
 	constructor(db: DataDatabase, handlerDependencies: SurfaceHandlerDependencies, io: UIHandler) {
 		super()
 
 		this.#db = db
 		this.#handlerDependencies = handlerDependencies
 		this.#io = io
+
+		const surfacePluginProps: SurfacePluginProps = {
+			executeExpression: this.#surfaceExecuteExpression.bind(this),
+		}
+
+		this.#surfacePlugins.set('streamdeck', new SurfacePluginElgatoStreamDeckManager(surfacePluginProps))
 
 		this.#outboundController = new SurfaceOutboundController(this, db, io)
 
@@ -278,6 +287,7 @@ export class SurfaceController extends EventEmitter<SurfaceControllerEvents> {
 	}
 
 	triggerRefreshDevicesEvent(): void {
+		// TODO - propagate the usb sources to the correct scan methods
 		this.triggerRefreshDevices().catch((e) => {
 			this.#logger.warn(`Hotplug device refresh failed: ${e}`)
 		})
@@ -837,7 +847,7 @@ export class SurfaceController extends EventEmitter<SurfaceControllerEvents> {
 		this.#lastSentJson = newJson
 	}
 
-	async #refreshDevices(): Promise<string | undefined> {
+	async #refreshDevices(): Promise<void> {
 		// Ensure only one scan is being run at a time
 		if (this.#runningRefreshDevices) {
 			return this.triggerRefreshDevices()
@@ -846,42 +856,30 @@ export class SurfaceController extends EventEmitter<SurfaceControllerEvents> {
 		try {
 			this.#runningRefreshDevices = true
 
-			let streamDeckSoftwareRunning = false
-			const streamdeckDisabled = !!this.#handlerDependencies.userconfig.getKey('elgato_plugin_enable')
-
-			try {
-				// Make sure we don't try to take over stream deck devices when the stream deck application
-				// is running on windows.
-				if (!streamdeckDisabled && process.platform === 'win32') {
-					const list = await findProcess('name', 'Stream Deck')
-					if (typeof list === 'object' && list.length > 0) {
-						streamDeckSoftwareRunning = true
-						this.#logger.silly('Elgato software detected, ignoring stream decks')
-					}
-				}
-			} catch (e) {
-				// scan for all usb devices anyways
-			}
-
 			// Now do the scan
 			const scanForLoupedeck = !!this.#handlerDependencies.userconfig.getKey('loupedeck_enable')
 			this.#logger.silly('scanForLoupedeck', scanForLoupedeck)
-			const ignoreStreamDeck = streamDeckSoftwareRunning || streamdeckDisabled
 			this.#logger.silly('USB: checking devices')
 
 			try {
 				await Promise.allSettled([
+					...Array.from(this.#surfacePlugins).map(async ([pluginId, plugin]) => {
+						const newSurfaces = await plugin.refreshSurfaces()
+						await Promise.allSettled(
+							newSurfaces.map(async (surface) => {
+								// TODO - check this id!
+								// TODO - the id should be reworked, so that the plugin only needs to scope it to be unique within itself, with the handler/wrapper adding the prefix
+								this.#createSurfaceHandler(surface.info.deviceId, pluginId, surface)
+
+								// TODO - batch this
+								setImmediate(() => this.updateDevicesList())
+							})
+						)
+					}),
 					HID.devicesAsync().then(async (deviceInfos) =>
 						Promise.allSettled(
 							deviceInfos.map(async (deviceInfo) => {
 								if (deviceInfo.path && !this.#surfaceHandlers.has(deviceInfo.path)) {
-									if (!ignoreStreamDeck) {
-										if (getStreamDeckDeviceInfo(deviceInfo)) {
-											await this.#addDevice(deviceInfo.path, {}, 'elgato-streamdeck', SurfaceUSBElgatoStreamDeck)
-											return
-										}
-									}
-
 									if (
 										deviceInfo.vendorId === 0xffff &&
 										(deviceInfo.productId === 0x1f40 || deviceInfo.productId === 0x1f41)
@@ -968,14 +966,6 @@ export class SurfaceController extends EventEmitter<SurfaceControllerEvents> {
 				])
 
 				this.#logger.silly('USB: done')
-
-				if (streamdeckDisabled) {
-					return 'Ignoring Stream Decks devices as the plugin has been enabled'
-				} else if (ignoreStreamDeck) {
-					return 'Ignoring Stream Decks devices as the stream deck app is running'
-				} else {
-					return undefined
-				}
 			} catch (e) {
 				this.#logger.silly('USB: scan failed ' + e)
 				throw 'Scan failed'
