@@ -25,7 +25,6 @@ import type { CompanionSurfaceConfigField, GridSize } from '@companion-app/share
 import type { ImageResult } from '../../Graphics/ImageResult.js'
 import type {
 	DrawButtonItem,
-	LocalUSBDeviceOptions,
 	SurfaceExecuteExpressionFn,
 	SurfacePanel,
 	SurfacePanelEvents,
@@ -53,6 +52,10 @@ const configFields: CompanionSurfaceConfigField[] = [
 			'Set the pattern of LEDs on the T-bar. Use numbers -16 to 16, positive numbers light up from the bottom, negative from the top.',
 	},
 ]
+
+interface SurfaceUSBBlackmagicControllerOptions {
+	executeExpression: SurfaceExecuteExpressionFn
+}
 
 export class SurfaceUSBBlackmagicController extends EventEmitter<SurfacePanelEvents> implements SurfacePanel {
 	readonly #logger: Logger
@@ -152,7 +155,10 @@ export class SurfaceUSBBlackmagicController extends EventEmitter<SurfacePanelEve
 	/**
 	 * Open a blackmagic controller
 	 */
-	static async create(devicePath: string, options: LocalUSBDeviceOptions): Promise<SurfaceUSBBlackmagicController> {
+	static async create(
+		devicePath: string,
+		options: SurfaceUSBBlackmagicControllerOptions
+	): Promise<SurfaceUSBBlackmagicController> {
 		const blackmagicController = await openBlackmagicController(devicePath)
 
 		try {

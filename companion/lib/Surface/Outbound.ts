@@ -1,7 +1,7 @@
 import { nanoid } from 'nanoid'
 import LogController from '../Log/Controller.js'
 import { DEFAULT_TCP_PORT, StreamDeckTcpConnectionManager } from '@elgato-stream-deck/tcp'
-import { StreamDeckJpegOptions } from './USB/ElgatoStreamDeck.js'
+import { StreamDeckJpegOptions } from './Plugins/ElgatoStreamDeck.js'
 import type { SurfaceController } from './Controller.js'
 import type { DataDatabase } from '../Data/Database.js'
 import type { UIHandler, ClientSocket } from '../UI/Handler.js'

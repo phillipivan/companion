@@ -46,10 +46,7 @@ export class SurfacePluginXKeysManager implements SurfacePluginBase<SurfacePlugi
 
 				return this.#openSurfaces
 					.tryOpeningWithHidAccessCheck(path, async () =>
-						SurfaceUSBXKeys.create(path, {
-							useLegacyLayout: this.#config.legacyLayout,
-							executeExpression: this.#props.executeExpression,
-						})
+						SurfaceUSBXKeys.create(path, { useLegacyLayout: this.#config.legacyLayout })
 					)
 					.catch((e) => {
 						this.#logger.error(`Failed to open Contour Shuttle: ${e?.message ?? e}`)

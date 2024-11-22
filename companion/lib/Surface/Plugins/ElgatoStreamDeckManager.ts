@@ -3,7 +3,7 @@ import type { SurfacePluginBase, SurfacePluginProps } from './Base.js'
 import LogController from '../../Log/Controller.js'
 import findProcess from 'find-process'
 import { listStreamDecks } from '@elgato-stream-deck/node'
-import { SurfaceUSBElgatoStreamDeck } from '../USB/ElgatoStreamDeck.js'
+import { SurfaceUSBElgatoStreamDeck } from './ElgatoStreamDeck.js'
 import { OpenSurfacesManager } from './Util.js'
 import { cloneDeep } from 'lodash-es'
 

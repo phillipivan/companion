@@ -21,14 +21,11 @@ import { cloneDeep } from 'lodash-es'
 import { nanoid } from 'nanoid'
 import pDebounce from 'p-debounce'
 import { usb } from 'usb'
-import { listLoupedecks, LoupedeckModelId } from '@loupedeck/node'
 import { SurfaceHandler, getSurfaceName } from './Handler.js'
 import { SurfaceIPElgatoEmulator, EmulatorRoom } from './IP/ElgatoEmulator.js'
 import { SurfaceIPElgatoPlugin } from './IP/ElgatoPlugin.js'
 import { SurfaceIPSatellite, SatelliteDeviceInfo } from './IP/Satellite.js'
-import { SurfaceUSBElgatoStreamDeck } from './USB/ElgatoStreamDeck.js'
-import { SurfaceUSBLoupedeckLive } from './USB/LoupedeckLive.js'
-import { SurfaceUSBLoupedeckCt } from './USB/LoupedeckCt.js'
+import { SurfaceUSBElgatoStreamDeck } from './Plugins/ElgatoStreamDeck.js'
 import { SurfaceIPVideohubPanel, VideohubPanelDeviceInfo } from './IP/VideohubPanel.js'
 import { SurfaceGroup } from './Group.js'
 import { SurfaceOutboundController } from './Outbound.js'
@@ -43,7 +40,7 @@ import type { ClientSocket, UIHandler } from '../UI/Handler.js'
 import type { StreamDeckTcp } from '@elgato-stream-deck/tcp'
 import type { ServiceElgatoPluginSocket } from '../Service/ElgatoPlugin.js'
 import type { CompanionVariableValues } from '@companion-module/base'
-import type { LocalUSBDeviceOptions, SurfaceHandlerDependencies, SurfacePanel, SurfacePanelFactory } from './Types.js'
+import type { SurfaceHandlerDependencies, SurfacePanel } from './Types.js'
 import { createOrSanitizeSurfaceHandlerConfig } from './Config.js'
 import { EventEmitter } from 'events'
 import LogController from '../Log/Controller.js'
@@ -57,6 +54,7 @@ import { SurfacePluginInfinittonManager } from './Plugins/InfinittonManager.js'
 import { SurfacePluginBlackmagicControllerManager } from './Plugins/BlackmagicControllerManager.js'
 import { SurfacePluginContourShuttleManager } from './Plugins/ContourShuttleManager.js'
 import { SurfacePluginXKeysManager } from './Plugins/XKeysManager.js'
+import { SurfacePluginLoupedeckManager } from './Plugins/LoupedeckManager.js'
 
 // Force it to load the hidraw driver just in case
 HID.setDriverType('hidraw')
@@ -150,6 +148,7 @@ export class SurfaceController extends EventEmitter<SurfaceControllerEvents> {
 		this.#surfacePlugins.set('blackmagic-controller', new SurfacePluginBlackmagicControllerManager(surfacePluginProps))
 		this.#surfacePlugins.set('contour-shuttle', new SurfacePluginContourShuttleManager(surfacePluginProps))
 		this.#surfacePlugins.set('xkeys', new SurfacePluginXKeysManager(surfacePluginProps))
+		this.#surfacePlugins.set('loupedeck', new SurfacePluginLoupedeckManager(surfacePluginProps)) // TODO - combine ids?
 
 		this.#outboundController = new SurfaceOutboundController(this, db, io)
 
@@ -859,8 +858,6 @@ export class SurfaceController extends EventEmitter<SurfaceControllerEvents> {
 			this.#runningRefreshDevices = true
 
 			// Now do the scan
-			const scanForLoupedeck = !!this.#handlerDependencies.userconfig.getKey('loupedeck_enable')
-			this.#logger.silly('scanForLoupedeck', scanForLoupedeck)
 			this.#logger.silly('USB: checking devices')
 
 			try {
@@ -878,31 +875,6 @@ export class SurfaceController extends EventEmitter<SurfaceControllerEvents> {
 							})
 						)
 					}),
-
-					scanForLoupedeck
-						? listLoupedecks().then((deviceInfos) =>
-								Promise.allSettled(
-									deviceInfos.map(async (deviceInfo) => {
-										this.#logger.info('found loupedeck', deviceInfo)
-										if (!this.#surfaceHandlers.has(deviceInfo.path)) {
-											if (
-												deviceInfo.model === LoupedeckModelId.LoupedeckLive ||
-												deviceInfo.model === LoupedeckModelId.LoupedeckLiveS ||
-												deviceInfo.model === LoupedeckModelId.RazerStreamController ||
-												deviceInfo.model === LoupedeckModelId.RazerStreamControllerX
-											) {
-												await this.#addDevice(deviceInfo.path, {}, 'loupedeck-live', SurfaceUSBLoupedeckLive, true)
-											} else if (
-												deviceInfo.model === LoupedeckModelId.LoupedeckCt ||
-												deviceInfo.model === LoupedeckModelId.LoupedeckCtV1
-											) {
-												await this.#addDevice(deviceInfo.path, {}, 'loupedeck-ct', SurfaceUSBLoupedeckCt, true)
-											}
-										}
-									})
-								)
-							)
-						: null,
 				])
 
 				this.#logger.silly('USB: done')
@@ -983,51 +955,6 @@ export class SurfaceController extends EventEmitter<SurfaceControllerEvents> {
 		})
 
 		return device
-	}
-
-	async #addDevice(
-		devicePath: string,
-		deviceOptions: Omit<LocalUSBDeviceOptions, 'executeExpression'>,
-		type: string,
-		factory: SurfacePanelFactory,
-		skipHidAccessCheck = false
-	) {
-		this.removeDevice(devicePath)
-
-		this.#logger.silly('add device ' + devicePath)
-
-		if (!skipHidAccessCheck) {
-			// Check if we have access to the device
-			try {
-				const devicetest = new HID.HID(devicePath)
-				devicetest.close()
-			} catch (e) {
-				this.#logger.error(
-					`Found "${type}" device, but no access. Please quit any other applications using the device, and try again.`
-				)
-				return
-			}
-		}
-
-		// Define something, so that it is known it is loading
-		this.#surfaceHandlers.set(devicePath, null)
-
-		try {
-			const dev = await factory.create(devicePath, {
-				...deviceOptions,
-				executeExpression: this.#surfaceExecuteExpression.bind(this),
-			})
-			this.#createSurfaceHandler(devicePath, type, dev)
-
-			setImmediate(() => {
-				this.updateDevicesList()
-			})
-		} catch (e) {
-			this.#logger.error(`Failed to add "${type}" device: ${e}`)
-
-			// Failed, remove the placeholder
-			this.#surfaceHandlers.delete(devicePath)
-		}
 	}
 
 	#surfaceExecuteExpression(

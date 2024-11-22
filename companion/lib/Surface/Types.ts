@@ -8,15 +8,6 @@ import type { GraphicsController } from '../Graphics/Controller.js'
 import type { PageController } from '../Page/Controller.js'
 import type { VariablesController } from '../Variables/Controller.js'
 
-export type SurfacePanelFactory = {
-	create: (path: string, options: LocalUSBDeviceOptions) => Promise<SurfacePanel>
-}
-
-export interface LocalUSBDeviceOptions {
-	executeExpression: SurfaceExecuteExpressionFn
-	useLegacyLayout?: boolean
-}
-
 export type SurfaceExecuteExpressionFn = (
 	str: string,
 	surfaceId: string,

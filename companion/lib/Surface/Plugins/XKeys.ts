@@ -26,7 +26,7 @@ import {
 	LockConfigFields,
 } from '../CommonConfigFields.js'
 import type { CompanionSurfaceConfigField, GridSize } from '@companion-app/shared/Model/Surfaces.js'
-import type { LocalUSBDeviceOptions, SurfacePanel, SurfacePanelEvents, SurfacePanelInfo } from '../Types.js'
+import type { SurfacePanel, SurfacePanelEvents, SurfacePanelInfo } from '../Types.js'
 import type { ImageResult } from '../../Graphics/ImageResult.js'
 
 const configFields: CompanionSurfaceConfigField[] = [
@@ -41,6 +41,10 @@ const configFields: CompanionSurfaceConfigField[] = [
 	RotationConfigField,
 	...LockConfigFields,
 ]
+
+interface SurfaceUSBXKeysOptions {
+	useLegacyLayout: boolean
+}
 
 export class SurfaceUSBXKeys extends EventEmitter<SurfacePanelEvents> implements SurfacePanel {
 	readonly #logger: Logger
@@ -80,7 +84,7 @@ export class SurfaceUSBXKeys extends EventEmitter<SurfacePanelEvents> implements
 	readonly info: SurfacePanelInfo
 	readonly gridSize: GridSize
 
-	constructor(devicePath: string, panel: XKeys, deviceId: string, options: LocalUSBDeviceOptions) {
+	constructor(devicePath: string, panel: XKeys, deviceId: string, options: SurfaceUSBXKeysOptions) {
 		super()
 
 		this.#logger = LogController.createLogger(`Surface/USB/XKeys/${devicePath}`)
@@ -258,7 +262,7 @@ export class SurfaceUSBXKeys extends EventEmitter<SurfacePanelEvents> implements
 	/**
 	 * Create an xkeys device
 	 */
-	static async create(devicePath: string, options: LocalUSBDeviceOptions): Promise<SurfaceUSBXKeys> {
+	static async create(devicePath: string, options: SurfaceUSBXKeysOptions): Promise<SurfaceUSBXKeys> {
 		const panel = await setupXkeysPanel(devicePath)
 
 		try {
