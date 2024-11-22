@@ -103,7 +103,7 @@ export interface OutboundSurfaceInfo {
 	displayName: string
 	type: 'elgato'
 	address: string
-	port: number | undefined
+	port: number
 }
 
 export type OutboundSurfacesUpdate = OutboundSurfacesUpdateRemoveOp | OutboundSurfacesUpdateAddOp

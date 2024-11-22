@@ -1,11 +1,12 @@
 import { nanoid } from 'nanoid'
 import LogController from '../Log/Controller.js'
-import { DEFAULT_TCP_PORT, StreamDeckTcpConnectionManager } from '@elgato-stream-deck/tcp'
-import { StreamDeckJpegOptions } from './Plugins/ElgatoStreamDeck.js'
+import { DEFAULT_TCP_PORT } from '@elgato-stream-deck/tcp'
 import type { SurfaceController } from './Controller.js'
 import type { DataDatabase } from '../Data/Database.js'
 import type { UIHandler, ClientSocket } from '../UI/Handler.js'
 import type { OutboundSurfaceInfo, OutboundSurfacesUpdateRemoveOp } from '@companion-app/shared/Model/Surfaces.js'
+import { SurfaceOutboundPluginBase } from './Plugins/Base.js'
+import { SurfacePluginElgatoStreamDeckOutboundManager } from './Plugins/ElgatoStreamDeckOutboundManager.js'
 
 const OutboundSurfacesRoom = 'surfaces:outbound'
 
@@ -29,32 +30,22 @@ export class SurfaceOutboundController {
 
 	#storage: Record<string, OutboundSurfaceInfo> = {}
 
-	#streamdeckTcpConnectionManager = new StreamDeckTcpConnectionManager({
-		jpegOptions: StreamDeckJpegOptions,
-		autoConnectToSecondaries: true,
-	})
+	readonly #outboundPlugins = new Map<string, SurfaceOutboundPluginBase<any>>()
 
 	constructor(controller: SurfaceController, db: DataDatabase, io: UIHandler) {
 		this.#controller = controller
 		this.#db = db
 		this.#io = io
 
-		// @ts-ignore why is this failing?
-		this.#streamdeckTcpConnectionManager.on('connected', (streamdeck) => {
-			this.#logger.info(
-				`Connected to TCP Streamdeck ${streamdeck.remoteAddress}:${streamdeck.remotePort} (${streamdeck.PRODUCT_NAME})`
-			)
+		// TODO - initial config
+		this.#registerPlugin('elgato', new SurfacePluginElgatoStreamDeckOutboundManager())
+	}
 
-			this.#controller.addStreamdeckTcpDevice(streamdeck).catch((e) => {
-				this.#logger.error(`Failed to add TCP Streamdeck: ${e}`)
-				// TODO - how to handle?
-				// streamdeck.close()
-			})
+	#registerPlugin(pluginType: string, plugin: SurfaceOutboundPluginBase<any>): void {
+		plugin.on('connected', (panel) => {
+			this.#controller.createSurfaceHandler(panel.info.deviceId, `${pluginType}-outbound`, panel)
 		})
-		// @ts-ignore why is this failing?
-		this.#streamdeckTcpConnectionManager.on('error', (error) => {
-			this.#logger.error(`Error from TCP Streamdeck: ${error}`)
-		})
+		this.#outboundPlugins.set(pluginType, plugin)
 	}
 
 	#saveToDb() {
@@ -70,8 +61,9 @@ export class SurfaceOutboundController {
 
 		for (const surfaceInfo of Object.values(this.#storage)) {
 			try {
-				if (surfaceInfo.type === 'elgato') {
-					this.#streamdeckTcpConnectionManager.connectTo(surfaceInfo.address, surfaceInfo.port)
+				const plugin = this.#outboundPlugins.get(surfaceInfo.type)
+				if (plugin) {
+					plugin.connectTo(surfaceInfo.address, surfaceInfo.port)
 				} else {
 					throw new Error(`Remote surface type "${surfaceInfo.type}" is not supported`)
 				}
@@ -94,7 +86,8 @@ export class SurfaceOutboundController {
 			client.leave(OutboundSurfacesRoom)
 		})
 		client.onPromise('surfaces:outbound:add', async (type, address, port, name) => {
-			if (type !== 'elgato') throw new Error(`Surface type "${type}" is not supported`)
+			const plugin = this.#outboundPlugins.get(type)
+			if (!plugin) throw new Error(`Surface type "${type}" is not supported`)
 
 			// Ensure port number is defined
 			if (!port) port = DEFAULT_TCP_PORT
@@ -127,7 +120,7 @@ export class SurfaceOutboundController {
 				},
 			])
 
-			this.#streamdeckTcpConnectionManager.connectTo(address, port)
+			plugin.connectTo(newInfo.address, newInfo.port)
 
 			return id
 		})
@@ -146,7 +139,13 @@ export class SurfaceOutboundController {
 				},
 			])
 
-			this.#streamdeckTcpConnectionManager.disconnectFrom(surfaceInfo.address, surfaceInfo.port)
+			const plugin = this.#outboundPlugins.get(surfaceInfo.type)
+
+			if (plugin) {
+				plugin.disconnectFrom(surfaceInfo.address, surfaceInfo.port)
+			} else {
+				this.#logger.warn(`Unable to remove remote surface at ${surfaceInfo.address}:${surfaceInfo.port}`)
+			}
 		})
 
 		client.onPromise('surfaces:outbound:set-name', async (id, name) => {
@@ -168,7 +167,9 @@ export class SurfaceOutboundController {
 	}
 
 	reset(): void {
-		this.#streamdeckTcpConnectionManager.disconnectFromAll()
+		for (const plugin of this.#outboundPlugins.values()) {
+			plugin.disconnectFromAll()
+		}
 
 		const ops: OutboundSurfacesUpdateRemoveOp[] = Object.keys(this.#storage).map((id) => ({
 			type: 'remove',
@@ -183,6 +184,8 @@ export class SurfaceOutboundController {
 	}
 
 	quit(): void {
-		this.#streamdeckTcpConnectionManager.disconnectFromAll()
+		for (const plugin of this.#outboundPlugins.values()) {
+			plugin.disconnectFromAll()
+		}
 	}
 }

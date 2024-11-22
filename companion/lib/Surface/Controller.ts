@@ -305,7 +305,7 @@ export class SurfaceController extends EventEmitter<SurfaceControllerEvents> {
 			throw new Error(`Emulator "${id}" already exists!`)
 		}
 
-		this.#createSurfaceHandler(fullId, 'emulator', new SurfaceIPElgatoEmulator(this.#io, id))
+		this.createSurfaceHandler(fullId, 'emulator', new SurfaceIPElgatoEmulator(this.#io, id))
 
 		if (!skipUpdate) this.updateDevicesList()
 	}
@@ -313,7 +313,7 @@ export class SurfaceController extends EventEmitter<SurfaceControllerEvents> {
 	/**
 	 * Create a `SurfaceHandler` for a `SurfacePanel`
 	 */
-	#createSurfaceHandler(surfaceId: string, integrationType: string, panel: SurfacePanel): void {
+	createSurfaceHandler(surfaceId: string, integrationType: string, panel: SurfacePanel): void {
 		const existingSurfaceConfig = this.getDeviceConfig(panel.info.deviceId)
 		if (!existingSurfaceConfig) {
 			this.#logger.silly(`Creating config for newly discovered device ${panel.info.deviceId}`)
@@ -868,7 +868,7 @@ export class SurfaceController extends EventEmitter<SurfaceControllerEvents> {
 							newSurfaces.map(async (surface) => {
 								// TODO - check this id!
 								// TODO - the id should be reworked, so that the plugin only needs to scope it to be unique within itself, with the handler/wrapper adding the prefix
-								this.#createSurfaceHandler(surface.info.deviceId, pluginId, surface)
+								this.createSurfaceHandler(surface.info.deviceId, pluginId, surface)
 
 								// TODO - batch this
 								setImmediate(() => this.updateDevicesList())
@@ -887,20 +887,6 @@ export class SurfaceController extends EventEmitter<SurfaceControllerEvents> {
 		}
 	}
 
-	async addStreamdeckTcpDevice(streamdeck: StreamDeckTcp) {
-		const fakePath = `tcp://${streamdeck.remoteAddress}:${streamdeck.remotePort}`
-
-		this.removeDevice(fakePath)
-
-		const device = await SurfaceUSBElgatoStreamDeck.fromTcp(fakePath, streamdeck)
-
-		this.#createSurfaceHandler(fakePath, 'elgato-streamdeck-tcp', device)
-
-		setImmediate(() => this.updateDevicesList())
-
-		return device
-	}
-
 	/**
 	 * Add a satellite device
 	 */
@@ -909,7 +895,7 @@ export class SurfaceController extends EventEmitter<SurfaceControllerEvents> {
 
 		const device = new SurfaceIPSatellite(deviceInfo, this.#surfaceExecuteExpression.bind(this))
 
-		this.#createSurfaceHandler(deviceInfo.path, 'satellite', device)
+		this.createSurfaceHandler(deviceInfo.path, 'satellite', device)
 
 		setImmediate(() => {
 			this.updateDevicesList()
@@ -926,7 +912,7 @@ export class SurfaceController extends EventEmitter<SurfaceControllerEvents> {
 
 		const device = new SurfaceIPVideohubPanel(deviceInfo)
 
-		this.#createSurfaceHandler(deviceInfo.path, 'videohub-panel', device)
+		this.createSurfaceHandler(deviceInfo.path, 'videohub-panel', device)
 
 		setImmediate(() => {
 			this.updateDevicesList()
@@ -948,7 +934,7 @@ export class SurfaceController extends EventEmitter<SurfaceControllerEvents> {
 			socket
 		)
 
-		this.#createSurfaceHandler(devicePath, 'elgato-plugin', device)
+		this.createSurfaceHandler(devicePath, 'elgato-plugin', device)
 
 		setImmediate(() => {
 			this.updateDevicesList()
