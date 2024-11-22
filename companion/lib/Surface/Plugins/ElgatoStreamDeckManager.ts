@@ -4,7 +4,7 @@ import LogController from '../../Log/Controller.js'
 import findProcess from 'find-process'
 import { listStreamDecks } from '@elgato-stream-deck/node'
 import { SurfaceUSBElgatoStreamDeck } from '../USB/ElgatoStreamDeck.js'
-import { checkHidAccess } from './Util.js'
+import { OpenSurfacesManager } from './Util.js'
 import { cloneDeep } from 'lodash-es'
 
 export interface SurfacePluginElgatoStreamDeckConfig {
@@ -20,18 +20,13 @@ export class SurfacePluginElgatoStreamDeckManager implements SurfacePluginBase<S
 
 	#config: SurfacePluginElgatoStreamDeckConfig = cloneDeep(this.DefaultConfig)
 
-	#props: SurfacePluginProps
+	// #props: SurfacePluginProps
 
-	constructor(props: SurfacePluginProps) {
-		this.#props = props
+	constructor(_props: SurfacePluginProps) {
+		// this.#props = props
 	}
 
-	/**
-	 * All the opened StreamDecks
-	 */
-	readonly #openSurfaces = new Map<string, SurfaceUSBElgatoStreamDeck | null>()
-
-	// constructor(userconfig: any) {}
+	readonly #openSurfaces = new OpenSurfacesManager<SurfaceUSBElgatoStreamDeck>()
 
 	async refreshSurfaces(): Promise<SurfacePanel[]> {
 		const streamdeckDisabled = this.#config.elgato_plugin_enable
@@ -46,30 +41,11 @@ export class SurfacePluginElgatoStreamDeckManager implements SurfacePluginBase<S
 			candidateStreamDecks.map(async (candidate) => {
 				this.#logger.silly(`opening device ${candidate.path}`)
 
-				// Already open/opening
-				if (this.#openSurfaces.has(candidate.path)) return null
-
-				if (!checkHidAccess(candidate.path)) {
-					this.#logger.error(
-						`Found Stream Deck, but no access. Please quit any other applications using the device, and try again.`
-					)
-					return null
-				}
-
-				// Define something, so that it is known it is loading
-				this.#openSurfaces.set(candidate.path, null)
-
-				try {
-					const dev = await SurfaceUSBElgatoStreamDeck.create(candidate.path)
-					return dev
-				} catch (e) {
-					this.#logger.error(`Failed to open Stream Deck: ${e}`)
-
-					// Failed, remove the placeholder
-					this.#openSurfaces.delete(candidate.path)
-
-					return null
-				}
+				return this.#openSurfaces
+					.tryOpeningWithHidAccessCheck(candidate.path, async () => SurfaceUSBElgatoStreamDeck.create(candidate.path))
+					.catch((e) => {
+						this.#logger.error(`Failed to open Stream Deck: ${e}`)
+					})
 			})
 		)
 

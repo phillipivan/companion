@@ -2,7 +2,7 @@ import type { ExecuteExpressionResult } from '../../Variables/Util.js'
 import type { SurfacePanel } from '../Types.js'
 import type { CompanionVariableValues } from '@companion-module/base'
 
-export interface SurfacePluginBase<TConfig extends object> {
+export interface SurfacePluginBase<TConfig extends object | null> {
 	// TODO
 
 	readonly DefaultConfig: TConfig

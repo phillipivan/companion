@@ -16,7 +16,6 @@
  *
  */
 
-import findProcess from 'find-process'
 import HID from 'node-hid'
 import jsonPatch from 'fast-json-patch'
 import { cloneDeep } from 'lodash-es'
@@ -25,8 +24,6 @@ import pDebounce from 'p-debounce'
 import { getBlackmagicControllerDeviceInfo } from '@blackmagic-controller/node'
 import { usb } from 'usb'
 import shuttleControlUSB from 'shuttle-control-usb'
-// @ts-ignore
-import vecFootpedal from 'vec-footpedal'
 import { listLoupedecks, LoupedeckModelId } from '@loupedeck/node'
 import { SurfaceHandler, getSurfaceName } from './Handler.js'
 import { SurfaceIPElgatoEmulator, EmulatorRoom } from './IP/ElgatoEmulator.js'
@@ -38,10 +35,7 @@ import { SurfaceUSBXKeys } from './USB/XKeys.js'
 import { SurfaceUSBLoupedeckLive } from './USB/LoupedeckLive.js'
 import { SurfaceUSBLoupedeckCt } from './USB/LoupedeckCt.js'
 import { SurfaceUSBContourShuttle } from './USB/ContourShuttle.js'
-import { SurfaceUSBVECFootpedal } from './USB/VECFootpedal.js'
 import { SurfaceIPVideohubPanel, VideohubPanelDeviceInfo } from './IP/VideohubPanel.js'
-import { SurfaceUSBFrameworkMacropad } from './USB/FrameworkMacropad.js'
-import { SurfaceUSB203SystemsMystrix } from './USB/203SystemsMystrix.js'
 import { SurfaceGroup } from './Group.js'
 import { SurfaceOutboundController } from './Outbound.js'
 import { SurfaceUSBBlackmagicController } from './USB/BlackmagicController.js'
@@ -63,6 +57,9 @@ import LogController from '../Log/Controller.js'
 import type { DataDatabase } from '../Data/Database.js'
 import { SurfacePluginBase, SurfacePluginProps } from './Plugins/Base.js'
 import { SurfacePluginElgatoStreamDeckManager } from './Plugins/ElgatoStreamDeckManager.js'
+import { SurfacePluginFrameworkMacropadManager } from './Plugins/FrameworkMacropadManager.js'
+import { SurfacePlugin203SystemsMystrixManager } from './Plugins/203SystemsMystrixManager.js'
+import { SurfacePluginVECFootpedalManager } from './Plugins/VECFootpedalManager.js'
 
 // Force it to load the hidraw driver just in case
 HID.setDriverType('hidraw')
@@ -148,6 +145,9 @@ export class SurfaceController extends EventEmitter<SurfaceControllerEvents> {
 		}
 
 		this.#surfacePlugins.set('streamdeck', new SurfacePluginElgatoStreamDeckManager(surfacePluginProps))
+		this.#surfacePlugins.set('framework-macropad', new SurfacePluginFrameworkMacropadManager(surfacePluginProps))
+		this.#surfacePlugins.set('203-mystrix', new SurfacePlugin203SystemsMystrixManager(surfacePluginProps))
+		this.#surfacePlugins.set('vec-footpedal', new SurfacePluginVECFootpedalManager(surfacePluginProps))
 
 		this.#outboundController = new SurfaceOutboundController(this, db, io)
 
@@ -885,14 +885,6 @@ export class SurfaceController extends EventEmitter<SurfaceControllerEvents> {
 										(deviceInfo.productId === 0x1f40 || deviceInfo.productId === 0x1f41)
 									) {
 										await this.#addDevice(deviceInfo.path, {}, 'infinitton', SurfaceUSBInfinitton)
-									} else if (
-										// More specific match has to be above xkeys
-										deviceInfo.vendorId === vecFootpedal.vids.VEC &&
-										deviceInfo.productId === vecFootpedal.pids.FOOTPEDAL
-									) {
-										if (this.#handlerDependencies.userconfig.getKey('vec_footpedal_enable')) {
-											await this.#addDevice(deviceInfo.path, {}, 'vec-footpedal', SurfaceUSBVECFootpedal)
-										}
 									} else if (deviceInfo.vendorId === 1523 && deviceInfo.interface === 0) {
 										if (this.#handlerDependencies.userconfig.getKey('xkeys_enable')) {
 											await this.#addDevice(
@@ -914,26 +906,10 @@ export class SurfaceController extends EventEmitter<SurfaceControllerEvents> {
 											await this.#addDevice(deviceInfo.path, {}, 'contour-shuttle', SurfaceUSBContourShuttle)
 										}
 									} else if (
-										deviceInfo.vendorId === 0x32ac && // frame.work
-										deviceInfo.productId === 0x0013 && // macropod
-										deviceInfo.usagePage === 0xffdd && // rawhid interface
-										deviceInfo.usage === 0x61
-									) {
-										await this.#addDevice(deviceInfo.path, {}, 'framework-macropad', SurfaceUSBFrameworkMacropad)
-									} else if (
 										this.#handlerDependencies.userconfig.getKey('blackmagic_controller_enable') &&
 										getBlackmagicControllerDeviceInfo(deviceInfo)
 									) {
 										await this.#addDevice(deviceInfo.path, {}, 'blackmagic-controller', SurfaceUSBBlackmagicController)
-									} else if (
-										deviceInfo.vendorId === 0x0203 && // 203 Systems
-										(deviceInfo.productId & 0xffc0) == 0x1040 && // Mystrix
-										deviceInfo.usagePage === 0xff00 && // rawhid interface
-										deviceInfo.usage === 0x01
-									) {
-										if (this.#handlerDependencies.userconfig.getKey('mystrix_enable')) {
-											await this.#addDevice(deviceInfo.path, {}, '203-mystrix', SurfaceUSB203SystemsMystrix)
-										}
 									}
 								}
 							})
