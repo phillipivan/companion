@@ -1,7 +1,7 @@
 import type { SurfacePanel } from '../Types.js'
 import type { SurfacePluginBase, SurfacePluginProps } from './Base.js'
 import LogController from '../../Log/Controller.js'
-import { SurfaceUSBFrameworkMacropad } from '../USB/FrameworkMacropad.js'
+import { SurfaceUSBFrameworkMacropad } from './FrameworkMacropad.js'
 import { OpenSurfacesManager } from './Util.js'
 import { devicesAsync, Device as HidDeviceInfo } from 'node-hid'
 
