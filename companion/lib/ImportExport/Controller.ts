@@ -1049,6 +1049,9 @@ export class ImportExportController {
 		instanceIdMap['internal'] = { id: 'internal', label: 'internal' }
 		instanceIdMap['bitfocus-companion'] = { id: 'internal', label: 'internal' }
 
+		// Ensure any group references are valid
+		this.#instancesController.groups.removeUnknownGroupReferences()
+
 		return instanceIdMap
 	}
 
