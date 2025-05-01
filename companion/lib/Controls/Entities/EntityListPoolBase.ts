@@ -92,6 +92,14 @@ export abstract class ControlEntityListPoolBase {
 	protected abstract getEntityList(listId: SomeSocketEntityLocation): ControlEntityList | undefined
 	protected abstract getAllEntityLists(): ControlEntityList[]
 
+	findEntityById(id: string): ControlEntityInstance | undefined {
+		for (const list of this.getAllEntityLists()) {
+			const entity = list.findById(id)
+			if (entity) return entity
+		}
+		return undefined
+	}
+
 	/**
 	 * Recursively get all the entities
 	 */

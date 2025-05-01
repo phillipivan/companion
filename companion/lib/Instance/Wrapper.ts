@@ -56,8 +56,9 @@ import {
 import type { ClientEntityDefinition } from '@companion-app/shared/Model/EntityDefinitionModel.js'
 import type { Complete } from '@companion-module/base/dist/util.js'
 import type { RespawnMonitor } from '@companion-app/shared/Respawn.js'
-import { doesModuleExpectLabelUpdates } from './ApiVersions.js'
+import { doesModuleExpectLabelUpdates, doesModuleUseSeparateUpgradeMethod } from './ApiVersions.js'
 import { InternalActionInputField, InternalFeedbackInputField } from '@companion-app/shared/Model/Options.js'
+import { ControlEntityInstance } from 'lib/Controls/Entities/EntityInstance.js'
 
 export interface InstanceModuleWrapperDependencies {
 	readonly controls: ControlsController
@@ -88,10 +89,17 @@ export class SocketEventsHandler {
 
 	#expectsLabelUpdates: boolean = false
 
+	#usesNewUpgradeFlow: boolean = false
+
+	#actionsBeingUpgraded = new Map<string, 'inprogress' | 'invalidated'>()
+	#feedbacksBeingUpgraded = new Map<string, 'inprogress' | 'invalidated'>()
+
 	/**
 	 * Current label of the connection
 	 */
 	#label: string
+
+	#initialized = false
 
 	/**
 	 * Unsubscribe listeners, for use during cleanup
@@ -114,6 +122,7 @@ export class SocketEventsHandler {
 		this.connectionId = connectionId
 		this.#label = connectionId // Give a default label until init is called
 		this.#expectsLabelUpdates = doesModuleExpectLabelUpdates(apiVersion)
+		this.#usesNewUpgradeFlow = doesModuleUseSeparateUpgradeMethod(apiVersion)
 
 		const funcs: IpcEventHandlers<ModuleToHostEventsV0> = {
 			'log-message': this.#handleLogMessage.bind(this),
@@ -164,8 +173,10 @@ export class SocketEventsHandler {
 		this.logger = LogController.createLogger(`Instance/Wrapper/${config.label}`)
 		this.#label = config.label
 
-		const allFeedbacks = this.#getAllFeedbackInstances()
-		const allActions = this.#getAllActionInstances()
+		const allFeedbacks = this.#usesNewUpgradeFlow ? {} : this.#getAllFeedbackInstances()
+		const allActions = this.#usesNewUpgradeFlow ? {} : this.#getAllActionInstances()
+
+		const preinitUpgradeIndex = config.lastUpgradeIndex ?? -1
 
 		const msg = await this.#ipcWrapper.sendWithCb(
 			'init',
@@ -185,10 +196,161 @@ export class SocketEventsHandler {
 		)
 
 		// Save the resulting values
+		this.#initialized = true
 		this.#hasHttpHandler = !!msg.hasHttpHandler
 		this.hasRecordActionsHandler = !!msg.hasRecordActionsHandler
 		config.lastUpgradeIndex = msg.newUpgradeIndex
 		this.#deps.setConnectionConfig(this.connectionId, msg.updatedConfig)
+
+		if (this.#usesNewUpgradeFlow) {
+			// dispatch the initial upgrade of actions and feedbacks
+
+			const originalFeedbacks = Object.values(this.#getAllFeedbackInstances())
+			const originalActions = Object.values(this.#getAllActionInstances())
+
+			const getId = (entity: ModuleActionInstance | ModuleFeedbackInstance) => `${entity.controlId}_${entity.id}`
+
+			this.#actionsBeingUpgraded.clear()
+			this.#feedbacksBeingUpgraded.clear()
+			for (const action of originalActions) {
+				this.#actionsBeingUpgraded.set(getId(action), 'inprogress')
+			}
+			for (const feedback of originalFeedbacks) {
+				this.#feedbacksBeingUpgraded.set(getId(feedback), 'inprogress')
+			}
+
+			this.#ipcWrapper
+				.sendWithCb('upgradeActionsAndFeedbacks', {
+					actions: originalActions,
+					feedbacks: originalFeedbacks,
+					defaultUpgradeIndex: preinitUpgradeIndex,
+				})
+				.then((upgraded) => {
+					const upgradedActions = new Map(upgraded.updatedActions.map((act) => [act.id, act]))
+					const upgradedFeedbacks = new Map(upgraded.updatedFeedbacks.map((fb) => [fb.id, fb]))
+					const entitiesToRetry: ControlEntityInstance[] = []
+
+					for (const oldAction of originalActions) {
+						const upgradeStatus = this.#actionsBeingUpgraded.get(getId(oldAction))
+						this.#actionsBeingUpgraded.delete(getId(oldAction))
+
+						const control = this.#deps.controls.getControl(oldAction.controlId)
+						if (!control || !control.supportsEntities) {
+							this.logger.silly(`Control ${oldAction.controlId} does not support entities`)
+							continue
+						}
+
+						// Find the entity being updated
+						const entity = control.entities.findEntityById(oldAction.id)
+						if (!entity) {
+							this.logger.silly(`Failed to find entity for action: ${oldAction.id} ${oldAction.controlId}`)
+							continue
+						}
+						if (entity.type !== EntityModelType.Action) {
+							this.logger.silly(`Entity is not an action: ${oldAction.id} ${oldAction.controlId}`)
+							continue
+						}
+
+						// Check if the result we have is valid
+						if (upgradeStatus === 'invalidated') {
+							this.logger.silly(`Action ${oldAction.id} was invalidated, skipping upgrade`)
+							entitiesToRetry.push(entity)
+							continue
+						}
+
+						// Update the entity
+						const newAction = upgradedActions.get(oldAction.id)
+						if (newAction) {
+							entity.replaceProps({
+								type: EntityModelType.Action,
+								id: oldAction.id,
+								definitionId: newAction.actionId,
+								options: newAction.options,
+							})
+						} else {
+							// No update needed, but module needs to be informed about the parsed values
+							this.entityUpdate(entity.asEntityModel(), control.controlId).catch((e) => {
+								this.logger.silly(`entityUpdate to connection failed: ${e.message} ${e.stack}`)
+							})
+						}
+					}
+
+					for (const oldFeedback of originalFeedbacks) {
+						const upgradeStatus = this.#feedbacksBeingUpgraded.get(getId(oldFeedback))
+						if (upgradeStatus === 'invalidated') {
+							this.logger.silly(`Feedback ${oldFeedback.id} was invalidated, skipping upgrade`)
+							feedbackIdsToRetry.push({ feedbackId: oldFeedback.id, controlId: oldFeedback.controlId })
+							continue
+						}
+
+						this.#feedbacksBeingUpgraded.delete(getId(oldFeedback))
+
+						const control = this.#deps.controls.getControl(oldFeedback.controlId)
+						if (!control || !control.supportsEntities) {
+							this.logger.silly(`Control ${oldFeedback.controlId} does not support entities`)
+							continue
+						}
+
+						const newFeedback = upgradedFeedbacks.get(oldFeedback.id)
+						if (newFeedback) {
+							const found = control.entities.entityReplace({
+								type: EntityModelType.Feedback,
+								id: oldFeedback.id,
+								definitionId: newFeedback.feedbackId,
+								options: newFeedback.options,
+								style: newFeedback.style,
+								isInverted: newFeedback.isInverted,
+							})
+
+							if (!found) {
+								this.logger.silly(`Failed to replace upgraded feedback: ${oldFeedback.id} ${oldFeedback.controlId}`)
+							}
+						} else {
+							const entity = control.entities.findEntityById(oldFeedback.id)
+							if (entity) {
+								this.entityUpdate(entity.asEntityModel(), control.controlId).catch((e) => {
+									this.logger.silly(`entityUpdate to connection failed: ${e.message} ${e.stack}`)
+								})
+							} else {
+								this.logger.silly(`Failed to find entity for feedback: ${oldFeedback.id} ${oldFeedback.controlId}`)
+							}
+						}
+					}
+
+					// TODO - retry any actions that were invalidated
+
+					// for (const action of upgraded.updatedActions) {
+					// 	if (this.#actionsBeingUpgraded.get(action.id) === 'invalidated') {
+					// 		this.logger.silly(`Action ${action.id} was invalidated, skipping upgrade`)
+					// 		actionIdsToRetry.push({actionId:action.id, controlId:action.controlId})
+					// 		continue
+					// 	}
+
+					// 	const control = this.#deps.controls.getControl(action.controlId)
+					// 	const found =
+					// 		control?.supportsEntities &&
+					// 		control.entities.entityReplace(
+					// 			{
+					// 				type: EntityModelType.Action,
+					// 				id: action.id,
+					// 				definitionId: action.actionId,
+					// 				options: action.options,
+					// 			},
+					// 			true
+					// 		)
+
+					// 		if (!found) {
+					// 			this.logger.silly(`Failed to replace upgraded action: ${action.id} ${action.controlId}`)
+					// 		}
+					// }
+
+					// TODO
+				})
+				.catch((e) => {
+					this.logger.error(`Failed to upgrade actions and feedbacks: ${e}`)
+					this.#sendToModuleLog('error', `Failed to upgrade actions and feedbacks: ${e}`)
+				})
+		}
 	}
 
 	/**
@@ -839,6 +1001,11 @@ export class SocketEventsHandler {
 	 * Handle the module informing us of some actions/feedbacks which have been run through upgrade scripts
 	 */
 	async #handleUpgradedItems(msg: UpgradedDataResponseMessage): Promise<void> {
+		if (this.#usesNewUpgradeFlow) {
+			this.logger.error(`Module should not be using 'upgradedItems' as it uses the new upgrade flow`)
+			throw new Error(`Module should not be using 'upgradedItems' as it uses the new upgrade flow`)
+		}
+
 		try {
 			// TODO - we should batch these changes when there are multiple on one control (to void excessive redrawing)
 
