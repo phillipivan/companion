@@ -194,6 +194,7 @@ export class InstanceDefinitions {
 			definitionId: definitionId,
 			connectionId: connectionId,
 			options: {},
+			upgradeIndex: undefined,
 		}
 
 		if (definition.options !== undefined && definition.options.length > 0) {
@@ -360,6 +361,7 @@ export class InstanceDefinitions {
 				isInverted: feedback.isInverted,
 				style: cloneDeep(feedback.style),
 				headline: feedback.headline,
+				upgradeIndex: undefined,
 			}))
 		}
 
@@ -600,6 +602,7 @@ function toActionInstance(action: PresetActionInstance, connectionId: string): A
 		definitionId: action.action,
 		options: cloneDeep(action.options ?? {}),
 		headline: action.headline,
+		upgradeIndex: undefined,
 	}
 }
 
@@ -672,6 +675,7 @@ function wrapActionsInGroup(actions: ActionEntityModel[]): ActionEntityModel {
 		children: {
 			default: actions,
 		},
+		upgradeIndex: undefined,
 	}
 }
 function createWaitAction(delay: number): ActionEntityModel {
@@ -683,5 +687,6 @@ function createWaitAction(delay: number): ActionEntityModel {
 		options: {
 			time: delay,
 		},
+		upgradeIndex: undefined,
 	}
 }

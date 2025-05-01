@@ -60,6 +60,10 @@ export class ControlEntityInstance {
 		return this.#data.type
 	}
 
+	get upgradeIndex(): number | undefined {
+		return this.#data.upgradeIndex
+	}
+
 	/**
 	 * Get the id of the connection this action belongs to
 	 */
@@ -213,7 +217,7 @@ export class ControlEntityInstance {
 			if (this.#data.connectionId === 'internal') {
 				this.#internalModule.entityUpdate(this.asEntityModel(), this.#controlId)
 			} else {
-				this.#moduleHost.connectionEntityUpdate(this.asEntityModel(), this.#controlId).catch((e) => {
+				this.#moduleHost.connectionEntityUpdate(this, this.#controlId).catch((e) => {
 					this.#logger.silly(`entityUpdate to connection "${this.connectionId}" failed: ${e.message} ${e.stack}`)
 				})
 			}
@@ -294,6 +298,16 @@ export class ControlEntityInstance {
 
 		// Inform relevant module
 		this.subscribe(false)
+	}
+
+	/**
+	 * Set the upgradeIndex for this entity or throw an error if it is already set
+	 */
+	setMissingUpgradeIndex(upgradeIndex: number): void {
+		if (this.#data.upgradeIndex !== undefined)
+			throw new Error(`Entity ${this.#data.id} already has an upgrade index set`)
+
+		this.#data.upgradeIndex = upgradeIndex
 	}
 
 	/**

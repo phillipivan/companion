@@ -58,7 +58,8 @@ import type { Complete } from '@companion-module/base/dist/util.js'
 import type { RespawnMonitor } from '@companion-app/shared/Respawn.js'
 import { doesModuleExpectLabelUpdates, doesModuleUseSeparateUpgradeMethod } from './ApiVersions.js'
 import { InternalActionInputField, InternalFeedbackInputField } from '@companion-app/shared/Model/Options.js'
-import { ControlEntityInstance } from 'lib/Controls/Entities/EntityInstance.js'
+import { InstanceEntityManager } from './EntityManager.js'
+import type { ControlEntityInstance } from '../Controls/Entities/EntityInstance.js'
 
 export interface InstanceModuleWrapperDependencies {
 	readonly controls: ControlsController
@@ -91,15 +92,12 @@ export class SocketEventsHandler {
 
 	#usesNewUpgradeFlow: boolean = false
 
-	#actionsBeingUpgraded = new Map<string, 'inprogress' | 'invalidated'>()
-	#feedbacksBeingUpgraded = new Map<string, 'inprogress' | 'invalidated'>()
+	readonly #entityManager: InstanceEntityManager | null
 
 	/**
 	 * Current label of the connection
 	 */
 	#label: string
-
-	#initialized = false
 
 	/**
 	 * Unsubscribe listeners, for use during cleanup
@@ -156,6 +154,8 @@ export class SocketEventsHandler {
 			5000
 		)
 
+		this.#entityManager = this.#usesNewUpgradeFlow ? new InstanceEntityManager(this.#ipcWrapper) : null
+
 		const messageHandler = (msg: any) => {
 			this.#ipcWrapper.receivedMessage(msg)
 		}
@@ -176,7 +176,19 @@ export class SocketEventsHandler {
 		const allFeedbacks = this.#usesNewUpgradeFlow ? {} : this.#getAllFeedbackInstances()
 		const allActions = this.#usesNewUpgradeFlow ? {} : this.#getAllActionInstances()
 
-		const preinitUpgradeIndex = config.lastUpgradeIndex ?? -1
+		// Ensure each entity knows its upgradeIndex
+		const allControls = this.#deps.controls.getAllControls()
+		for (const control of allControls.values()) {
+			if (!control.supportsEntities) continue
+
+			for (const entity of control.entities.getAllEntities()) {
+				if (entity.connectionId !== this.connectionId) continue
+
+				if (entity.upgradeIndex === undefined) {
+					entity.setMissingUpgradeIndex(config.lastUpgradeIndex)
+				}
+			}
+		}
 
 		const msg = await this.#ipcWrapper.sendWithCb(
 			'init',
@@ -196,161 +208,12 @@ export class SocketEventsHandler {
 		)
 
 		// Save the resulting values
-		this.#initialized = true
 		this.#hasHttpHandler = !!msg.hasHttpHandler
 		this.hasRecordActionsHandler = !!msg.hasRecordActionsHandler
 		config.lastUpgradeIndex = msg.newUpgradeIndex
 		this.#deps.setConnectionConfig(this.connectionId, msg.updatedConfig)
 
-		if (this.#usesNewUpgradeFlow) {
-			// dispatch the initial upgrade of actions and feedbacks
-
-			const originalFeedbacks = Object.values(this.#getAllFeedbackInstances())
-			const originalActions = Object.values(this.#getAllActionInstances())
-
-			const getId = (entity: ModuleActionInstance | ModuleFeedbackInstance) => `${entity.controlId}_${entity.id}`
-
-			this.#actionsBeingUpgraded.clear()
-			this.#feedbacksBeingUpgraded.clear()
-			for (const action of originalActions) {
-				this.#actionsBeingUpgraded.set(getId(action), 'inprogress')
-			}
-			for (const feedback of originalFeedbacks) {
-				this.#feedbacksBeingUpgraded.set(getId(feedback), 'inprogress')
-			}
-
-			this.#ipcWrapper
-				.sendWithCb('upgradeActionsAndFeedbacks', {
-					actions: originalActions,
-					feedbacks: originalFeedbacks,
-					defaultUpgradeIndex: preinitUpgradeIndex,
-				})
-				.then((upgraded) => {
-					const upgradedActions = new Map(upgraded.updatedActions.map((act) => [act.id, act]))
-					const upgradedFeedbacks = new Map(upgraded.updatedFeedbacks.map((fb) => [fb.id, fb]))
-					const entitiesToRetry: ControlEntityInstance[] = []
-
-					for (const oldAction of originalActions) {
-						const upgradeStatus = this.#actionsBeingUpgraded.get(getId(oldAction))
-						this.#actionsBeingUpgraded.delete(getId(oldAction))
-
-						const control = this.#deps.controls.getControl(oldAction.controlId)
-						if (!control || !control.supportsEntities) {
-							this.logger.silly(`Control ${oldAction.controlId} does not support entities`)
-							continue
-						}
-
-						// Find the entity being updated
-						const entity = control.entities.findEntityById(oldAction.id)
-						if (!entity) {
-							this.logger.silly(`Failed to find entity for action: ${oldAction.id} ${oldAction.controlId}`)
-							continue
-						}
-						if (entity.type !== EntityModelType.Action) {
-							this.logger.silly(`Entity is not an action: ${oldAction.id} ${oldAction.controlId}`)
-							continue
-						}
-
-						// Check if the result we have is valid
-						if (upgradeStatus === 'invalidated') {
-							this.logger.silly(`Action ${oldAction.id} was invalidated, skipping upgrade`)
-							entitiesToRetry.push(entity)
-							continue
-						}
-
-						// Update the entity
-						const newAction = upgradedActions.get(oldAction.id)
-						if (newAction) {
-							entity.replaceProps({
-								type: EntityModelType.Action,
-								id: oldAction.id,
-								definitionId: newAction.actionId,
-								options: newAction.options,
-							})
-						} else {
-							// No update needed, but module needs to be informed about the parsed values
-							this.entityUpdate(entity.asEntityModel(), control.controlId).catch((e) => {
-								this.logger.silly(`entityUpdate to connection failed: ${e.message} ${e.stack}`)
-							})
-						}
-					}
-
-					for (const oldFeedback of originalFeedbacks) {
-						const upgradeStatus = this.#feedbacksBeingUpgraded.get(getId(oldFeedback))
-						if (upgradeStatus === 'invalidated') {
-							this.logger.silly(`Feedback ${oldFeedback.id} was invalidated, skipping upgrade`)
-							feedbackIdsToRetry.push({ feedbackId: oldFeedback.id, controlId: oldFeedback.controlId })
-							continue
-						}
-
-						this.#feedbacksBeingUpgraded.delete(getId(oldFeedback))
-
-						const control = this.#deps.controls.getControl(oldFeedback.controlId)
-						if (!control || !control.supportsEntities) {
-							this.logger.silly(`Control ${oldFeedback.controlId} does not support entities`)
-							continue
-						}
-
-						const newFeedback = upgradedFeedbacks.get(oldFeedback.id)
-						if (newFeedback) {
-							const found = control.entities.entityReplace({
-								type: EntityModelType.Feedback,
-								id: oldFeedback.id,
-								definitionId: newFeedback.feedbackId,
-								options: newFeedback.options,
-								style: newFeedback.style,
-								isInverted: newFeedback.isInverted,
-							})
-
-							if (!found) {
-								this.logger.silly(`Failed to replace upgraded feedback: ${oldFeedback.id} ${oldFeedback.controlId}`)
-							}
-						} else {
-							const entity = control.entities.findEntityById(oldFeedback.id)
-							if (entity) {
-								this.entityUpdate(entity.asEntityModel(), control.controlId).catch((e) => {
-									this.logger.silly(`entityUpdate to connection failed: ${e.message} ${e.stack}`)
-								})
-							} else {
-								this.logger.silly(`Failed to find entity for feedback: ${oldFeedback.id} ${oldFeedback.controlId}`)
-							}
-						}
-					}
-
-					// TODO - retry any actions that were invalidated
-
-					// for (const action of upgraded.updatedActions) {
-					// 	if (this.#actionsBeingUpgraded.get(action.id) === 'invalidated') {
-					// 		this.logger.silly(`Action ${action.id} was invalidated, skipping upgrade`)
-					// 		actionIdsToRetry.push({actionId:action.id, controlId:action.controlId})
-					// 		continue
-					// 	}
-
-					// 	const control = this.#deps.controls.getControl(action.controlId)
-					// 	const found =
-					// 		control?.supportsEntities &&
-					// 		control.entities.entityReplace(
-					// 			{
-					// 				type: EntityModelType.Action,
-					// 				id: action.id,
-					// 				definitionId: action.actionId,
-					// 				options: action.options,
-					// 			},
-					// 			true
-					// 		)
-
-					// 		if (!found) {
-					// 			this.logger.silly(`Failed to replace upgraded action: ${action.id} ${action.controlId}`)
-					// 		}
-					// }
-
-					// TODO
-				})
-				.catch((e) => {
-					this.logger.error(`Failed to upgrade actions and feedbacks: ${e}`)
-					this.#sendToModuleLog('error', `Failed to upgrade actions and feedbacks: ${e}`)
-				})
-		}
+		this.#entityManager?.start(config.lastUpgradeIndex)
 	}
 
 	/**
@@ -428,6 +291,11 @@ export class SocketEventsHandler {
 	 * @access public - needs to be re-run when the topbar setting changes
 	 */
 	async sendAllFeedbackInstances(): Promise<void> {
+		if (this.#entityManager) {
+			// TODO - trigger this
+			return
+		}
+
 		const msg = {
 			feedbacks: this.#getAllFeedbackInstances(),
 		}
@@ -440,6 +308,8 @@ export class SocketEventsHandler {
 	 * @access public - called whenever variables change
 	 */
 	async sendVariablesChanged(changedVariableIds: string[]): Promise<void> {
+		if (this.#usesNewUpgradeFlow) return
+
 		// Future: only inform module of variables it parsed and should react to.
 		// This will help avoid excess work when variables are not interesting to a module.
 
@@ -492,12 +362,21 @@ export class SocketEventsHandler {
 	// 	await this.ipcWrapper.sendWithCb('updateActions', msg)
 	// }
 
-	entityUpdate(entity: SomeEntityModel, controlId: string): Promise<void> {
-		switch (entity.type) {
+	async entityUpdate(entity: ControlEntityInstance, controlId: string): Promise<void> {
+		if (this.#entityManager) {
+			if (entity.connectionId !== this.connectionId) throw new Error(`Feedback is for a different connection`)
+			if (entity.disabled) return
+
+			this.#entityManager.trackEntity(entity, controlId)
+			return
+		}
+
+		const entityModel = entity.asEntityModel(false)
+		switch (entityModel.type) {
 			case EntityModelType.Action:
-				return this.#actionUpdate(entity, controlId)
+				return this.#actionUpdate(entityModel, controlId)
 			case EntityModelType.Feedback:
-				return this.#feedbackUpdate(entity, controlId)
+				return this.#feedbackUpdate(entityModel, controlId)
 		}
 	}
 
@@ -609,6 +488,11 @@ export class SocketEventsHandler {
 	async entityDelete(oldEntity: SomeEntityModel): Promise<void> {
 		if (oldEntity.connectionId !== this.connectionId) throw new Error(`Entity is for a different connection`)
 
+		if (this.#entityManager) {
+			this.#entityManager.forgetEntity(oldEntity.id)
+			return
+		}
+
 		switch (oldEntity.type) {
 			case EntityModelType.Action:
 				await this.#ipcWrapper.sendWithCb('updateActions', {
@@ -707,6 +591,8 @@ export class SocketEventsHandler {
 	 */
 	cleanup(): void {
 		this.#deps.sharedUdpManager.leaveAllFromOwner(this.connectionId)
+
+		this.#entityManager?.destroy()
 	}
 
 	/**
@@ -1022,6 +908,7 @@ export class SocketEventsHandler {
 								options: feedback.options,
 								style: feedback.style,
 								isInverted: feedback.isInverted,
+								upgradeIndex: feedback.upgradeIndex ?? undefined,
 							},
 							true
 						)
@@ -1042,6 +929,7 @@ export class SocketEventsHandler {
 								id: action.id,
 								definitionId: action.actionId,
 								options: action.options,
+								upgradeIndex: action.upgradeIndex ?? undefined,
 							},
 							true
 						)
