@@ -154,7 +154,9 @@ export class SocketEventsHandler {
 			5000
 		)
 
-		this.#entityManager = this.#usesNewUpgradeFlow ? new InstanceEntityManager(this.#ipcWrapper) : null
+		this.#entityManager = this.#usesNewUpgradeFlow
+			? new InstanceEntityManager(this.#ipcWrapper, this.#deps.controls)
+			: null
 
 		const messageHandler = (msg: any) => {
 			this.#ipcWrapper.receivedMessage(msg)
@@ -178,7 +180,7 @@ export class SocketEventsHandler {
 
 		// Ensure each entity knows its upgradeIndex
 		const allControls = this.#deps.controls.getAllControls()
-		for (const control of allControls.values()) {
+		for (const [controlId, control] of allControls.entries()) {
 			if (!control.supportsEntities) continue
 
 			for (const entity of control.entities.getAllEntities()) {
@@ -187,6 +189,8 @@ export class SocketEventsHandler {
 				if (entity.upgradeIndex === undefined) {
 					entity.setMissingUpgradeIndex(config.lastUpgradeIndex)
 				}
+
+				this.#entityManager?.trackEntity(entity, controlId)
 			}
 		}
 

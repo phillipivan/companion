@@ -11,6 +11,7 @@ import { assertNever } from '@companion-app/shared/Util.js'
 import { EntityModelType } from '@companion-app/shared/Model/EntityModel.js'
 import type { IpcWrapper } from '@companion-module/base/dist/host-api/ipc-wrapper.js'
 import { nanoid } from 'nanoid'
+import type { ControlsController } from '../Controls/Controller.js'
 
 enum EntityState {
 	UNLOADED = 'UNLOADED',
@@ -30,23 +31,26 @@ interface EntityWrapper {
 }
 
 export class InstanceEntityManager {
-	readonly #entities = new Map<string, EntityWrapper>()
 	readonly #ipcWrapper: IpcWrapper<HostToModuleEventsV0, ModuleToHostEventsV0>
+	readonly #controlsController: ControlsController
+
+	readonly #entities = new Map<string, EntityWrapper>()
 
 	// Before the connection is ready, we need to not send any updates
 	#ready = false
 	#currentUpgradeIndex = 0
 
-	constructor(ipcWrapper: IpcWrapper<HostToModuleEventsV0, ModuleToHostEventsV0>) {
+	constructor(
+		ipcWrapper: IpcWrapper<HostToModuleEventsV0, ModuleToHostEventsV0>,
+		controlsController: ControlsController
+	) {
 		this.#ipcWrapper = ipcWrapper
+		this.#controlsController = controlsController
 	}
 
 	readonly #debounceProcessPending = debounceFn(
 		() => {
 			if (!this.#ready) return
-
-			// TODO - each entity needs to trcak its upgradeIndex now, otherwise we stand no chance of tracking it correctly.
-			// Or perhaps more importantly, if it doesn't, then how do we know at this point whether to run it through them
 
 			const entityIdsInThisBatch = new Map<string, string>()
 			const upgradePayload: UpgradeActionAndFeedbackInstancesMessage = {
@@ -100,7 +104,10 @@ export class InstanceEntityManager {
 				switch (wrapper.state) {
 					case EntityState.UNLOADED:
 						// The entity is unloaded, it either needs to be upgraded or loaded
-						if (wrapper.entity.upgradeIndex === this.#currentUpgradeIndex) {
+						if (
+							wrapper.entity.upgradeIndex === undefined ||
+							wrapper.entity.upgradeIndex === this.#currentUpgradeIndex
+						) {
 							wrapper.state = EntityState.READY
 
 							const entityModel = wrapper.entity.asEntityModel(false)
@@ -206,13 +213,19 @@ export class InstanceEntityManager {
 									break
 								case EntityState.UPGRADING:
 									// It has been upgraded, so we can update the entity
-									// TODO
+
+									// We need to do this via the EntityPool method, so that it gets persisted correctly
+									const control = this.#controlsController.getControl(wrapper.controlId)
+									if (!control || !control.supportsEntities) {
+										console.warn(`Control ${wrapper.controlId} not found`)
+										continue
+									}
 
 									switch (wrapper.entity.type) {
 										case EntityModelType.Action: {
 											const action = upgradedActions.get(wrapper.entity.id)
 											if (action) {
-												wrapper.entity.replaceProps({
+												control.entities.entityReplace({
 													id: action.id,
 													type: EntityModelType.Action,
 													definitionId: action.actionId,
@@ -225,7 +238,7 @@ export class InstanceEntityManager {
 										case EntityModelType.Feedback: {
 											const feedback = upgradedFeedbacks.get(wrapper.entity.id)
 											if (feedback) {
-												wrapper.entity.replaceProps({
+												control.entities.entityReplace({
 													id: feedback.id,
 													type: EntityModelType.Feedback,
 													definitionId: feedback.feedbackId,

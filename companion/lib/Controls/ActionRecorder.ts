@@ -346,6 +346,7 @@ export class ActionRecorder extends EventEmitter<ActionRecorderEvents> {
 					options: options,
 
 					uniquenessId,
+					upgradeIndex: undefined,
 				}
 				const delayAction: RecordActionEntityModel = {
 					type: EntityModelType.Action,
@@ -356,6 +357,7 @@ export class ActionRecorder extends EventEmitter<ActionRecorderEvents> {
 						time: delay,
 					},
 					uniquenessId: undefined,
+					upgradeIndex: undefined,
 				}
 
 				// Replace existing action with matching uniquenessId, or push to end of the list
