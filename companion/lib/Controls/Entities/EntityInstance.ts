@@ -60,6 +60,13 @@ export class ControlEntityInstance {
 		return this.#data.type
 	}
 
+	/**
+	 * Get the upgrade index of this entity.
+	 * This _should_ always be defined now, but it may be msising for older entities
+	 *
+	 * Prior to 4.0, this was only stored for entities which were awaiting an upgrade.
+	 * Since 4.0, this should always be set.
+	 */
 	get upgradeIndex(): number | undefined {
 		return this.#data.upgradeIndex
 	}
