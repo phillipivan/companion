@@ -568,6 +568,7 @@ export class ControlEntityInstance {
 	replaceProps(newProps: SomeReplaceableEntityModel, skipNotifyModule = false): void {
 		this.#data.definitionId = newProps.definitionId
 		this.#data.options = newProps.options
+		this.#data.upgradeIndex = newProps.upgradeIndex
 
 		if (this.#data.type === EntityModelType.Feedback) {
 			const feedbackData = this.#data as FeedbackEntityModel
@@ -575,8 +576,6 @@ export class ControlEntityInstance {
 			feedbackData.isInverted = !!newPropsData.isInverted
 			feedbackData.style = Object.keys(feedbackData.style || {}).length > 0 ? feedbackData.style : newPropsData.style
 		}
-
-		delete this.#data.upgradeIndex
 
 		if (!skipNotifyModule) {
 			this.subscribe(false)
