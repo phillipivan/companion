@@ -90,8 +90,6 @@ export class SocketEventsHandler {
 
 	#expectsLabelUpdates: boolean = false
 
-	#usesNewUpgradeFlow: boolean = false
-
 	readonly #entityManager: InstanceEntityManager | null
 
 	/**
@@ -120,7 +118,6 @@ export class SocketEventsHandler {
 		this.connectionId = connectionId
 		this.#label = connectionId // Give a default label until init is called
 		this.#expectsLabelUpdates = doesModuleExpectLabelUpdates(apiVersion)
-		this.#usesNewUpgradeFlow = doesModuleUseSeparateUpgradeMethod(apiVersion)
 
 		const funcs: IpcEventHandlers<ModuleToHostEventsV0> = {
 			'log-message': this.#handleLogMessage.bind(this),
@@ -154,7 +151,7 @@ export class SocketEventsHandler {
 			5000
 		)
 
-		this.#entityManager = this.#usesNewUpgradeFlow
+		this.#entityManager = doesModuleUseSeparateUpgradeMethod(apiVersion)
 			? new InstanceEntityManager(this.#ipcWrapper, this.#deps.controls)
 			: null
 
@@ -175,8 +172,8 @@ export class SocketEventsHandler {
 		this.logger = LogController.createLogger(`Instance/Wrapper/${config.label}`)
 		this.#label = config.label
 
-		const allFeedbacks = this.#usesNewUpgradeFlow ? {} : this.#getAllFeedbackInstances()
-		const allActions = this.#usesNewUpgradeFlow ? {} : this.#getAllActionInstances()
+		const allFeedbacks = this.#entityManager ? {} : this.#getAllFeedbackInstances()
+		const allActions = this.#entityManager ? {} : this.#getAllActionInstances()
 
 		// Ensure each entity knows its upgradeIndex
 		const allControls = this.#deps.controls.getAllControls()
@@ -312,7 +309,7 @@ export class SocketEventsHandler {
 	 * @access public - called whenever variables change
 	 */
 	async sendVariablesChanged(changedVariableIds: string[]): Promise<void> {
-		if (this.#usesNewUpgradeFlow) return
+		if (this.#entityManager) return
 
 		// Future: only inform module of variables it parsed and should react to.
 		// This will help avoid excess work when variables are not interesting to a module.
@@ -891,7 +888,7 @@ export class SocketEventsHandler {
 	 * Handle the module informing us of some actions/feedbacks which have been run through upgrade scripts
 	 */
 	async #handleUpgradedItems(msg: UpgradedDataResponseMessage): Promise<void> {
-		if (this.#usesNewUpgradeFlow) {
+		if (this.#entityManager) {
 			this.logger.error(`Module should not be using 'upgradedItems' as it uses the new upgrade flow`)
 			throw new Error(`Module should not be using 'upgradedItems' as it uses the new upgrade flow`)
 		}
