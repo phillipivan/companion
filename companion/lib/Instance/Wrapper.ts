@@ -154,7 +154,7 @@ export class SocketEventsHandler {
 		)
 
 		this.#entityManager = doesModuleUseSeparateUpgradeMethod(apiVersion)
-			? new InstanceEntityManager(this.#ipcWrapper, this.#deps.controls)
+			? new InstanceEntityManager(this.#ipcWrapper, this.#deps.controls, this.#deps.variables.values, this.#deps.page)
 			: null
 
 		const messageHandler = (msg: any) => {
@@ -310,8 +310,11 @@ export class SocketEventsHandler {
 	 * Send the list of changed variables to the child process
 	 * @access public - called whenever variables change
 	 */
-	async sendVariablesChanged(changedVariableIds: string[]): Promise<void> {
-		if (this.#entityManager) return
+	async sendVariablesChanged(changedVariableIdSet: Set<string>, changedVariableIds: string[]): Promise<void> {
+		if (this.#entityManager) {
+			this.#entityManager.onVariablesChanged(changedVariableIdSet)
+			return
+		}
 
 		// Future: only inform module of variables it parsed and should react to.
 		// This will help avoid excess work when variables are not interesting to a module.
@@ -547,7 +550,23 @@ export class SocketEventsHandler {
 	async actionRun(action: ActionEntityModel, extras: RunActionExtras): Promise<void> {
 		if (action.connectionId !== this.connectionId) throw new Error(`Action is for a different connection`)
 
+		// TODO - preparse options
+
 		try {
+			let actionOptions = action.options
+			if (this.#entityManager) {
+				// This means the new flow is being done, and the options must be parsed at this stage
+				const actionDefinition = this.#deps.instanceDefinitions.getEntityDefinition(
+					EntityModelType.Action,
+					this.connectionId,
+					action.definitionId
+				)
+				if (!actionDefinition) throw new Error(`Failed to find action definition for ${action.definitionId}`)
+
+				// Note: for actions, this case doesn't need to be reactive
+				actionOptions = this.#entityManager.parseOptionsObject(actionDefinition, actionOptions, extras.location)
+			}
+
 			await this.#ipcWrapper.sendWithCb('executeAction', {
 				action: {
 					id: action.id,

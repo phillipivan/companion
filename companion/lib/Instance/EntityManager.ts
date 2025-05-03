@@ -13,6 +13,11 @@ import { EntityModelType } from '@companion-app/shared/Model/EntityModel.js'
 import type { IpcWrapper } from '@companion-module/base/dist/host-api/ipc-wrapper.js'
 import { nanoid } from 'nanoid'
 import type { ControlsController } from '../Controls/Controller.js'
+import type { ClientEntityDefinition } from '@companion-app/shared/Model/EntityDefinitionModel.js'
+import type { OptionsObject } from '@companion-module/base/dist/util.js'
+import type { VariablesValues } from '../Variables/Values.js'
+import { ControlLocation } from '@companion-app/shared/Model/Common.js'
+import type { PageController } from '../Page/Controller.js'
 
 enum EntityState {
 	UNLOADED = 'UNLOADED',
@@ -31,9 +36,18 @@ interface EntityWrapper {
 	state: EntityState
 }
 
+/**
+ * This class is responsible for managing the entities that are tracked by the module
+ * By this, it will ensure that the entities are run through the upgrade scripts as needed, and also
+ * have the options parsed (by as much as companion supports) before being sent to the module for subscription callbacks
+ *
+ * TODO: options need to be pre-parsed before the callbacks, so that the update flow works correctly
+ */
 export class InstanceEntityManager {
 	readonly #ipcWrapper: IpcWrapper<HostToModuleEventsV0, ModuleToHostEventsV0>
 	readonly #controlsController: ControlsController
+	readonly #variableValuesController: VariablesValues
+	readonly #pagesController: PageController
 
 	readonly #entities = new Map<string, EntityWrapper>()
 
@@ -43,10 +57,14 @@ export class InstanceEntityManager {
 
 	constructor(
 		ipcWrapper: IpcWrapper<HostToModuleEventsV0, ModuleToHostEventsV0>,
-		controlsController: ControlsController
+		controlsController: ControlsController,
+		variableValuesController: VariablesValues,
+		pagesController: PageController
 	) {
 		this.#ipcWrapper = ipcWrapper
 		this.#controlsController = controlsController
+		this.#variableValuesController = variableValuesController
+		this.#pagesController = pagesController
 	}
 
 	readonly #debounceProcessPending = debounceFn(
@@ -114,13 +132,22 @@ export class InstanceEntityManager {
 							wrapper.state = EntityState.READY
 
 							const entityModel = wrapper.entity.asEntityModel(false)
+
+							// TODO - store the referencedVariableIds and invalidate the variables when one of them changes
+							const controlLocation = this.#pagesController.getLocationOfControlId(wrapper.controlId)
+							const { parsedOptions, referencedVariableIds } = this.parseOptionsObject(
+								wrapper.entity.getEntityDefinition(),
+								entityModel.options,
+								controlLocation
+							)
+
 							switch (entityModel.type) {
 								case EntityModelType.Action:
 									updateActionsPayload.actions[entityId] = {
 										id: entityModel.id,
 										controlId: wrapper.controlId,
 										actionId: entityModel.definitionId,
-										options: entityModel.options,
+										options: parsedOptions,
 
 										upgradeIndex: entityModel.upgradeIndex ?? null,
 										disabled: !!entityModel.disabled,
@@ -140,7 +167,7 @@ export class InstanceEntityManager {
 										id: entityModel.id,
 										controlId: wrapper.controlId,
 										feedbackId: entityModel.definitionId,
-										options: entityModel.options,
+										options: parsedOptions,
 
 										image: imageSize,
 
@@ -374,5 +401,42 @@ export class InstanceEntityManager {
 		}
 
 		this.#debounceProcessPending()
+	}
+
+	parseOptionsObject(
+		entityDefinition: ClientEntityDefinition | undefined,
+		options: OptionsObject,
+		location: ControlLocation | undefined
+	): {
+		parsedOptions: OptionsObject
+		referencedVariableIds: Set<string>
+	} {
+		if (!entityDefinition)
+			// If we don't know what fields need parsing, we can't do anything
+			return { parsedOptions: options, referencedVariableIds: new Set() }
+
+		const parsedOptions: OptionsObject = {}
+		const referencedVariableIds = new Set<string>()
+
+		for (const field of entityDefinition.options) {
+			if (field.type !== 'textinput') {
+				// Field doesn't support variables, pass unchanged
+				parsedOptions[field.id] = options[field.id]
+				continue
+			}
+
+			// Field needs parsing
+			const parseResult = this.#variableValuesController.parseVariables(String(options[field.id]), location)
+			parsedOptions[field.id] = parseResult.text
+			for (const variable of parseResult.variableIds) {
+				referencedVariableIds.add(variable)
+			}
+		}
+
+		return { parsedOptions, referencedVariableIds }
+	}
+
+	onVariablesChanged(variableIds: Set<string>): void {
+		// TODO
 	}
 }

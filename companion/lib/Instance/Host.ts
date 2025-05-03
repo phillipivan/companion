@@ -249,7 +249,7 @@ export class ModuleHost {
 
 		for (const child of this.#children.values()) {
 			if (child.handler && child.isReady) {
-				child.handler.sendVariablesChanged(changedVariableIds).catch((e) => {
+				child.handler.sendVariablesChanged(all_changed_variables_set, changedVariableIds).catch((e) => {
 					this.#logger.warn(`sendVariablesChanged failed for "${child.connectionId}": ${e}`)
 				})
 			}
