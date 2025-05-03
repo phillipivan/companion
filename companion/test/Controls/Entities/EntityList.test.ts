@@ -1057,7 +1057,7 @@ describe('duplicateEntity', () => {
 		expect(afterIds[2]).toBe(newEntity!.id)
 
 		expect(connectionEntityUpdate).toHaveBeenCalledTimes(1)
-		expect(connectionEntityUpdate).toHaveBeenCalledWith(newEntity!.asEntityModel(), 'test01')
+		expect(connectionEntityUpdate).toHaveBeenCalledWith(newEntity, 'test01')
 		expect(internalEntityUpdate).toHaveBeenCalledTimes(0)
 	})
 
@@ -1085,7 +1085,7 @@ describe('duplicateEntity', () => {
 		expect(afterIds[6]).toBe(newEntityChild!.id)
 
 		expect(connectionEntityUpdate).toHaveBeenCalledTimes(1)
-		expect(connectionEntityUpdate).toHaveBeenCalledWith(newEntityChild!.asEntityModel(), 'test01')
+		expect(connectionEntityUpdate).toHaveBeenCalledWith(newEntityChild, 'test01')
 		expect(internalEntityUpdate).toHaveBeenCalledTimes(1)
 		expect(internalEntityUpdate).toHaveBeenCalledWith(newEntity!.asEntityModel(), 'test01')
 	})
