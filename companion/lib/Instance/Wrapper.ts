@@ -296,7 +296,7 @@ export class SocketEventsHandler {
 	 */
 	async sendAllFeedbackInstances(): Promise<void> {
 		if (this.#entityManager) {
-			// TODO - trigger this
+			this.#entityManager.resendFeedbacks()
 			return
 		}
 

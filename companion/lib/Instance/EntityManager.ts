@@ -1,6 +1,7 @@
 import debounceFn from 'debounce-fn'
 import type { ControlEntityInstance } from '../Controls/Entities/EntityInstance.js'
 import type {
+	FeedbackInstance as ModuleFeedbackInstance,
 	HostToModuleEventsV0,
 	ModuleToHostEventsV0,
 	UpdateActionInstancesMessage,
@@ -99,6 +100,8 @@ export class InstanceEntityManager {
 				}
 			}
 
+			const controlImageSizeCache = new Map<string, ModuleFeedbackInstance['image']>()
+
 			// First, look over all the entiites and figure out what needs to be done to each
 			for (const [entityId, wrapper] of this.#entities) {
 				switch (wrapper.state) {
@@ -123,14 +126,23 @@ export class InstanceEntityManager {
 										disabled: !!entityModel.disabled,
 									}
 									break
-								case EntityModelType.Feedback:
+								case EntityModelType.Feedback: {
+									let imageSize: ModuleFeedbackInstance['image'] | undefined
+									if (controlImageSizeCache.has(wrapper.controlId)) {
+										imageSize = controlImageSizeCache.get(wrapper.controlId)
+									} else {
+										const control = this.#controlsController.getControl(wrapper.controlId)
+										imageSize = control?.getBitmapSize() ?? undefined
+										controlImageSizeCache.set(wrapper.controlId, imageSize)
+									}
+
 									updateFeedbacksPayload.feedbacks[entityId] = {
 										id: entityModel.id,
 										controlId: wrapper.controlId,
 										feedbackId: entityModel.definitionId,
 										options: entityModel.options,
 
-										image: undefined, // TODO
+										image: imageSize,
 
 										isInverted: !!entityModel.isInverted,
 
@@ -138,6 +150,7 @@ export class InstanceEntityManager {
 										disabled: !!entityModel.disabled,
 									}
 									break
+								}
 								default:
 									assertNever(entityModel)
 									console.log('Unknown entity type', wrapper.entity.type)
@@ -332,6 +345,33 @@ export class InstanceEntityManager {
 
 		// mark as pending deletion
 		wrapper.state = EntityState.PENDING_DELETE
+
+		this.#debounceProcessPending()
+	}
+
+	resendFeedbacks(): void {
+		for (const entity of this.#entities.values()) {
+			if (entity.entity.type !== EntityModelType.Feedback) continue
+
+			switch (entity.state) {
+				case EntityState.UNLOADED:
+				case EntityState.UPGRADING_INVALIDATED:
+					// Nothing to do, already pending
+					break
+				case EntityState.READY:
+					entity.state = EntityState.UNLOADED
+					break
+				case EntityState.UPGRADING:
+					entity.state = EntityState.UPGRADING_INVALIDATED
+					break
+				case EntityState.PENDING_DELETE:
+					// This is about to be deleted, so we can ignore it
+					break
+				default:
+					assertNever(entity.state)
+					break
+			}
+		}
 
 		this.#debounceProcessPending()
 	}
