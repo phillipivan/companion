@@ -34,6 +34,7 @@ interface EntityWrapper {
 	readonly controlId: string
 
 	state: EntityState
+	lastReferencedVariableIds?: ReadonlySet<string>
 }
 
 /**
@@ -140,6 +141,7 @@ export class InstanceEntityManager {
 								entityModel.options,
 								controlLocation
 							)
+							wrapper.lastReferencedVariableIds = referencedVariableIds
 
 							switch (entityModel.type) {
 								case EntityModelType.Action:
@@ -419,13 +421,14 @@ export class InstanceEntityManager {
 		const referencedVariableIds = new Set<string>()
 
 		for (const field of entityDefinition.options) {
-			if (field.type !== 'textinput') {
+			if (field.type !== 'textinput' || !field.useVariables) {
 				// Field doesn't support variables, pass unchanged
 				parsedOptions[field.id] = options[field.id]
 				continue
 			}
 
 			// Field needs parsing
+			// Note - we don't need to care about the granularity given in `useVariables`,
 			const parseResult = this.#variableValuesController.parseVariables(String(options[field.id]), location)
 			parsedOptions[field.id] = parseResult.text
 			for (const variable of parseResult.variableIds) {
@@ -437,6 +440,34 @@ export class InstanceEntityManager {
 	}
 
 	onVariablesChanged(variableIds: Set<string>): void {
-		// TODO
+		let anyInvalidated = false
+
+		for (const wrapper of this.#entities.values()) {
+			if (
+				wrapper.state === EntityState.UNLOADED ||
+				wrapper.state === EntityState.UPGRADING_INVALIDATED ||
+				wrapper.state === EntityState.UPGRADING ||
+				wrapper.state === EntityState.PENDING_DELETE
+			) {
+				// Nothing to do, the entity is not in the ready state
+				continue
+			}
+
+			if (!wrapper.lastReferencedVariableIds || wrapper.lastReferencedVariableIds.size === 0) {
+				// No variables to check, nothing to do
+				continue
+			}
+
+			if (variableIds.isDisjointFrom(wrapper.lastReferencedVariableIds)) {
+				// No variables changed that we care about, nothing to do
+				continue
+			}
+
+			// The entity is ready, so we need to re-parse the options
+			wrapper.state = EntityState.UNLOADED
+			anyInvalidated = true
+		}
+
+		if (anyInvalidated) this.#debounceProcessPending()
 	}
 }
