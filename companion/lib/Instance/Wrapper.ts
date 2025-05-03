@@ -92,6 +92,8 @@ export class SocketEventsHandler {
 
 	readonly #entityManager: InstanceEntityManager | null
 
+	#currentUpgradeIndex: number | null = null
+
 	/**
 	 * Current label of the connection
 	 */
@@ -211,7 +213,7 @@ export class SocketEventsHandler {
 		// Save the resulting values
 		this.#hasHttpHandler = !!msg.hasHttpHandler
 		this.hasRecordActionsHandler = !!msg.hasRecordActionsHandler
-		config.lastUpgradeIndex = msg.newUpgradeIndex
+		this.#currentUpgradeIndex = config.lastUpgradeIndex = msg.newUpgradeIndex
 		this.#deps.setConnectionConfig(this.connectionId, msg.updatedConfig)
 
 		this.#entityManager?.start(config.lastUpgradeIndex)
@@ -909,7 +911,7 @@ export class SocketEventsHandler {
 								options: feedback.options,
 								style: feedback.style,
 								isInverted: feedback.isInverted,
-								upgradeIndex: feedback.upgradeIndex ?? undefined,
+								upgradeIndex: feedback.upgradeIndex ?? this.#currentUpgradeIndex ?? undefined,
 							},
 							true
 						)
@@ -930,7 +932,7 @@ export class SocketEventsHandler {
 								id: action.id,
 								definitionId: action.actionId,
 								options: action.options,
-								upgradeIndex: action.upgradeIndex ?? undefined,
+								upgradeIndex: action.upgradeIndex ?? this.#currentUpgradeIndex ?? undefined,
 							},
 							true
 						)
