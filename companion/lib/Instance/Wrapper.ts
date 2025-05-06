@@ -154,7 +154,13 @@ export class SocketEventsHandler {
 		)
 
 		this.#entityManager = doesModuleUseSeparateUpgradeMethod(apiVersion)
-			? new InstanceEntityManager(this.#ipcWrapper, this.#deps.controls, this.#deps.variables.values, this.#deps.page)
+			? new InstanceEntityManager(
+					this.#ipcWrapper,
+					this.#deps.controls,
+					this.#deps.variables.values,
+					this.#deps.page,
+					this.connectionId
+				)
 			: null
 
 		const messageHandler = (msg: any) => {

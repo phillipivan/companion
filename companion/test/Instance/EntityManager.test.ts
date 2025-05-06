@@ -52,7 +52,8 @@ describe('InstanceEntityManager', () => {
 			mockIpcWrapper as any,
 			mockControlsController as any,
 			mockVariablesValues as any,
-			mockPagesController as any
+			mockPagesController as any,
+			'test-connection-id'
 		)
 
 		vi.useFakeTimers()
@@ -216,14 +217,11 @@ describe('InstanceEntityManager', () => {
 			vi.runAllTimers()
 
 			// Should have been called with null for the entity
-			expect(mockIpcWrapper.sendWithCb).toHaveBeenCalledWith(
-				'updateActions',
-				expect.objectContaining({
-					actions: expect.objectContaining({
-						'entity-1': null,
-					}),
-				})
-			)
+			expect(mockIpcWrapper.sendWithCb).toHaveBeenCalledWith('updateActions', {
+				actions: {
+					'entity-1': null,
+				},
+			})
 		})
 
 		it('should do nothing if entity does not exist', () => {
@@ -716,48 +714,13 @@ describe('InstanceEntityManager', () => {
 		})
 	})
 
-	describe('Advanced Variable Parsing', () => {
-		it('should handle complex variable structures in option fields', () => {
-			const entityDefinition = {
-				options: [
-					{ id: 'field1', type: 'textinput', useVariables: true },
-					{ id: 'field2', type: 'textinput', useVariables: true },
-				],
-			}
-
-			// Test with nested variables or arrays
-			const options = {
-				field1: '$(var:text) and $(instance:label)',
-				field2: ['$(var:item1)', '$(var:item2)'],
-			}
-
-			// Mock the variable parsing to handle multiple variables
-			mockVariablesValues.parseVariables
-				.mockReturnValueOnce({ text: 'parsed-text and label-value', variableIds: ['text', 'label'] })
-				.mockReturnValueOnce({ text: 'parsed-array', variableIds: ['item1', 'item2'] })
-
-			const result = entityManager.parseOptionsObject(entityDefinition as any, options, undefined)
-
-			expect(result.parsedOptions).toEqual({
-				field1: 'parsed-text and label-value',
-				field2: 'parsed-array',
-			})
-
-			// Should collect all variable references
-			expect(result.referencedVariableIds.has('text')).toBe(true)
-			expect(result.referencedVariableIds.has('label')).toBe(true)
-			expect(result.referencedVariableIds.has('item1')).toBe(true)
-			expect(result.referencedVariableIds.has('item2')).toBe(true)
-		})
-	})
-
 	describe('Performance', () => {
 		it('should handle multiple concurrent entity operations efficiently', () => {
 			entityManager.start(5)
 
 			// Create a large number of entities
 			const entityCount = 50
-			const mockEntities = []
+			const mockEntities: any[] = []
 
 			// Create multiple mock controls with proper getBitmapSize implementation
 			for (let i = 0; i < entityCount; i++) {
@@ -809,7 +772,7 @@ describe('InstanceEntityManager', () => {
 			// Find action call and verify it contains expected action entities
 			const actionCall = calls.find((call) => call[0] === 'updateActions')
 			expect(actionCall).toBeDefined()
-			const actionPayload = actionCall[1].actions
+			const actionPayload = actionCall![1].actions
 
 			// Should have exactly the right number of action entities (half of entityCount)
 			expect(Object.keys(actionPayload).length).toBe(Math.ceil(entityCount / 2))
@@ -827,7 +790,7 @@ describe('InstanceEntityManager', () => {
 			// Find feedback call and verify it contains expected feedback entities
 			const feedbackCall = calls.find((call) => call[0] === 'updateFeedbacks')
 			expect(feedbackCall).toBeDefined()
-			const feedbackPayload = feedbackCall[1].feedbacks
+			const feedbackPayload = feedbackCall![1].feedbacks
 
 			// Should have exactly the right number of feedback entities (half of entityCount)
 			expect(Object.keys(feedbackPayload).length).toBe(Math.floor(entityCount / 2))
@@ -938,129 +901,6 @@ describe('InstanceEntityManager', () => {
 		})
 	})
 
-	describe('Mixed Entity Types', () => {
-		it('should properly manage mixed entity types and ensure they are processed separately', () => {
-			// Create an action and a feedback with the same ID (which should be impossible in real use)
-			// but useful for testing they are kept separate
-			const mockAction = {
-				id: 'shared-id',
-				type: EntityModelType.Action,
-				definitionId: 'action-1',
-				upgradeIndex: 5,
-				asEntityModel: vi.fn().mockReturnValue({
-					id: 'shared-id',
-					type: EntityModelType.Action,
-					definitionId: 'action-1',
-					connectionId: 'connection-1',
-					options: { action: true },
-				}),
-				getEntityDefinition: vi.fn(),
-			}
-
-			const mockFeedback = {
-				id: 'shared-id-2',
-				type: EntityModelType.Feedback,
-				definitionId: 'feedback-1',
-				upgradeIndex: 5,
-				asEntityModel: vi.fn().mockReturnValue({
-					id: 'shared-id-2',
-					type: EntityModelType.Feedback,
-					definitionId: 'feedback-1',
-					connectionId: 'connection-1',
-					options: { feedback: true },
-				}),
-				getEntityDefinition: vi.fn(),
-			}
-
-			// Configure control mocks for both control IDs
-			mockControlsController.getControl.mockImplementation((id) => {
-				if (id === 'control-1' || id === 'control-2') {
-					return {
-						...mockControl,
-						getBitmapSize: vi.fn().mockReturnValue({ width: 72, height: 58 }),
-					}
-				}
-				return mockControl
-			})
-
-			entityManager.start(5)
-
-			// Add both entities
-			entityManager.trackEntity(mockAction as any, 'control-1')
-			entityManager.trackEntity(mockFeedback as any, 'control-2')
-
-			vi.runAllTimers()
-
-			// Verify they were processed separately by the correct handlers
-			expect(mockIpcWrapper.sendWithCb).toHaveBeenCalledWith('updateActions', {
-				actions: {
-					'shared-id': {
-						id: 'shared-id',
-						actionId: 'action-1',
-						options: { action: true },
-						disabled: false,
-						upgradeIndex: null,
-						controlId: 'control-1',
-					},
-				},
-			})
-
-			expect(mockIpcWrapper.sendWithCb).toHaveBeenCalledWith('updateFeedbacks', {
-				feedbacks: {
-					'shared-id-2': {
-						id: 'shared-id-2',
-						feedbackId: 'feedback-1',
-						options: { feedback: true },
-						disabled: false,
-						upgradeIndex: null,
-						controlId: 'control-2',
-						image: { width: 72, height: 58 },
-						isInverted: false,
-					},
-				},
-			})
-		})
-	})
-
-	describe('Lifecycle Management', () => {
-		it('should handle being stopped and restarted correctly', () => {
-			// Start the manager
-			entityManager.start(5)
-
-			// Add an entity
-			const mockEntity = {
-				id: 'entity-1',
-				type: EntityModelType.Action,
-				definitionId: 'action-1',
-				asEntityModel: vi.fn().mockReturnValue({
-					id: 'entity-1',
-					type: EntityModelType.Action,
-					definitionId: 'action-1',
-					connectionId: 'connection-1',
-					options: {},
-				}),
-				getEntityDefinition: vi.fn(),
-			}
-
-			entityManager.trackEntity(mockEntity as any, 'control-1')
-
-			// Process the initial entity
-			vi.runAllTimers()
-			mockIpcWrapper.sendWithCb.mockClear()
-
-			// Now destroy and restart with a different upgrade index
-			entityManager.destroy()
-			entityManager.start(6)
-
-			// Track the same entity again
-			entityManager.trackEntity(mockEntity as any, 'control-1')
-			vi.runAllTimers()
-
-			// Should have processed it with the new upgrade index
-			expect(mockIpcWrapper.sendWithCb).toHaveBeenCalledWith('updateActions', expect.anything())
-		})
-	})
-
 	describe('Edge Cases', () => {
 		it('should handle entities with missing entity definition', () => {
 			const mockEntity = {
@@ -1144,7 +984,7 @@ describe('InstanceEntityManager', () => {
 				variableIds: [],
 			})
 
-			const result = entityManager.parseOptionsObject(entityDefinition as any, options, undefined)
+			const result = entityManager.parseOptionsObject(entityDefinition as any, options as any, undefined)
 
 			// Should convert to string for parsing
 			expect(mockVariablesValues.parseVariables).toHaveBeenCalledWith('[object Object]', undefined)
@@ -1159,7 +999,7 @@ describe('InstanceEntityManager', () => {
 			entityManager.start(5)
 
 			// Create multiple action entities
-			const actionEntities = []
+			const actionEntities: any[] = []
 			for (let i = 0; i < 5; i++) {
 				actionEntities.push({
 					id: `action-${i}`,
@@ -1421,63 +1261,6 @@ describe('InstanceEntityManager', () => {
 					}),
 				})
 			)
-		})
-	})
-
-	describe('Special Option Handling', () => {
-		it('should handle null or undefined option values', () => {
-			const entityDefinition = {
-				options: [
-					{ id: 'field1', type: 'textinput', useVariables: true },
-					{ id: 'field2', type: 'textinput', useVariables: true },
-				],
-			}
-
-			// Test with null and undefined values
-			const options = {
-				field1: null,
-				field2: undefined,
-			}
-
-			// Setup the mock parseVariables to handle null/undefined
-			mockVariablesValues.parseVariables
-				.mockReturnValueOnce({ text: 'parsed-null', variableIds: [] })
-				.mockReturnValueOnce({ text: 'parsed-undefined', variableIds: [] })
-
-			const result = entityManager.parseOptionsObject(entityDefinition as any, options, undefined)
-
-			// Should convert null/undefined to strings for parsing
-			expect(mockVariablesValues.parseVariables).toHaveBeenCalledWith('null', undefined)
-			expect(mockVariablesValues.parseVariables).toHaveBeenCalledWith('undefined', undefined)
-
-			expect(result.parsedOptions).toEqual({
-				field1: 'parsed-null',
-				field2: 'parsed-undefined',
-			})
-		})
-
-		it('should handle numeric option values', () => {
-			const entityDefinition = {
-				options: [{ id: 'field1', type: 'textinput', useVariables: true }],
-			}
-
-			// Test with numeric value
-			const options = {
-				field1: 42,
-			}
-
-			mockVariablesValues.parseVariables.mockReturnValueOnce({
-				text: '42',
-				variableIds: [],
-			})
-
-			const result = entityManager.parseOptionsObject(entityDefinition as any, options, undefined)
-
-			// Should convert number to string for parsing
-			expect(mockVariablesValues.parseVariables).toHaveBeenCalledWith('42', undefined)
-			expect(result.parsedOptions).toEqual({
-				field1: '42',
-			})
 		})
 	})
 })

@@ -18,6 +18,7 @@ import type { OptionsObject } from '@companion-module/base/dist/util.js'
 import type { VariablesValues } from '../Variables/Values.js'
 import { ControlLocation } from '@companion-app/shared/Model/Common.js'
 import type { PageController } from '../Page/Controller.js'
+import LogController, { Logger } from '../Log/Controller.js'
 
 enum EntityState {
 	UNLOADED = 'UNLOADED',
@@ -43,6 +44,8 @@ interface EntityWrapper {
  * have the options parsed (by as much as companion supports) before being sent to the module for subscription callbacks
  */
 export class InstanceEntityManager {
+	readonly #logger: Logger
+
 	readonly #ipcWrapper: IpcWrapper<HostToModuleEventsV0, ModuleToHostEventsV0>
 	readonly #controlsController: ControlsController
 	readonly #variableValuesController: VariablesValues
@@ -58,8 +61,10 @@ export class InstanceEntityManager {
 		ipcWrapper: IpcWrapper<HostToModuleEventsV0, ModuleToHostEventsV0>,
 		controlsController: ControlsController,
 		variableValuesController: VariablesValues,
-		pagesController: PageController
+		pagesController: PageController,
+		connectionId: string
 	) {
+		this.#logger = LogController.createLogger(`Instance/EntityManager/${connectionId}`)
 		this.#ipcWrapper = ipcWrapper
 		this.#controlsController = controlsController
 		this.#variableValuesController = variableValuesController
@@ -113,7 +118,7 @@ export class InstanceEntityManager {
 						break
 					default:
 						assertNever(entityModel)
-						console.log('Unknown entity type', wrapper.entity.type)
+						this.#logger.warn('Unknown entity type', wrapper.entity.type)
 				}
 			}
 
@@ -180,7 +185,7 @@ export class InstanceEntityManager {
 								}
 								default:
 									assertNever(entityModel)
-									console.log('Unknown entity type', wrapper.entity.type)
+									this.#logger.warn('Unknown entity type', wrapper.entity.type)
 							}
 						} else {
 							wrapper.state = EntityState.UPGRADING
@@ -207,7 +212,7 @@ export class InstanceEntityManager {
 								break
 							default:
 								assertNever(wrapper.entity.type)
-								console.log('Unknown entity type', wrapper.entity.type)
+								this.#logger.warn('Unknown entity type', wrapper.entity.type)
 						}
 						break
 
@@ -219,12 +224,12 @@ export class InstanceEntityManager {
 			// Start by sending the simple payloads
 			if (Object.keys(updateActionsPayload.actions).length > 0) {
 				this.#ipcWrapper.sendWithCb('updateActions', updateActionsPayload).catch((e) => {
-					console.error('Error sending updateActions', e)
+					this.#logger.error('Error sending updateActions', e)
 				})
 			}
 			if (Object.keys(updateFeedbacksPayload.feedbacks).length > 0) {
 				this.#ipcWrapper.sendWithCb('updateFeedbacks', updateFeedbacksPayload).catch((e) => {
-					console.error('Error sending updateFeedbacks', e)
+					this.#logger.error('Error sending updateFeedbacks', e)
 				})
 			}
 
@@ -257,7 +262,7 @@ export class InstanceEntityManager {
 									// We need to do this via the EntityPool method, so that it gets persisted correctly
 									const control = this.#controlsController.getControl(wrapper.controlId)
 									if (!control || !control.supportsEntities) {
-										console.warn(`Control ${wrapper.controlId} not found`)
+										this.#logger.warn(`Control ${wrapper.controlId} not found`)
 										continue
 									}
 
@@ -313,7 +318,7 @@ export class InstanceEntityManager {
 						this.#debounceProcessPending()
 					})
 					.catch((e) => {
-						console.error('Error sending upgradeActionsAndFeedbacks', e)
+						this.#logger.error('Error sending upgradeActionsAndFeedbacks', e)
 
 						// There isn't much we can do to retry the upgrad, the best we can do is pretend it was fine and progress the entities through the process
 						for (const [entityId, wrapperId] of entityIdsInThisBatch) {
