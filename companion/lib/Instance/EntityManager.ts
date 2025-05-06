@@ -41,8 +41,6 @@ interface EntityWrapper {
  * This class is responsible for managing the entities that are tracked by the module
  * By this, it will ensure that the entities are run through the upgrade scripts as needed, and also
  * have the options parsed (by as much as companion supports) before being sent to the module for subscription callbacks
- *
- * TODO: options need to be pre-parsed before the callbacks, so that the update flow works correctly
  */
 export class InstanceEntityManager {
 	readonly #ipcWrapper: IpcWrapper<HostToModuleEventsV0, ModuleToHostEventsV0>
@@ -134,7 +132,7 @@ export class InstanceEntityManager {
 
 							const entityModel = wrapper.entity.asEntityModel(false)
 
-							// TODO - store the referencedVariableIds and invalidate the variables when one of them changes
+							// Parse the options and track the variables referenced
 							const controlLocation = this.#pagesController.getLocationOfControlId(wrapper.controlId)
 							const { parsedOptions, referencedVariableIds } = this.parseOptionsObject(
 								wrapper.entity.getEntityDefinition(),
