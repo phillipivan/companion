@@ -266,7 +266,7 @@ export class ConnectionConfigStore {
 	/**
 	 * Get all connection IDs belonging to a specific group
 	 */
-	getConnectionsInGroup(groupId: string | null): string[] {
+	getConnectionsIdsInGroup(groupId: string | null): string[] {
 		const connectionIds: string[] = []
 
 		for (const [id, config] of this.#store) {

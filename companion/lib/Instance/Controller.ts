@@ -167,6 +167,10 @@ export class InstanceController extends EventEmitter<InstanceControllerEvents> {
 		return this.#configStore.getAllInstanceIds()
 	}
 
+	getConnectionsIdsInGroup(groupId: string | null): string[] {
+		return this.#configStore.getConnectionsIdsInGroup(groupId)
+	}
+
 	/**
 	 * Handle an electron power event
 	 */
@@ -686,7 +690,7 @@ export class InstanceController extends EventEmitter<InstanceControllerEvents> {
 
 		client.onPromise('connections:set-group-enabled', (groupId, enabled) => {
 			// Find all connections in this group
-			const connections = this.#configStore.getConnectionsInGroup(groupId)
+			const connections = this.#configStore.getConnectionsIdsInGroup(groupId)
 
 			// Enable/disable all connections in the group
 			for (const connectionId of connections) {
