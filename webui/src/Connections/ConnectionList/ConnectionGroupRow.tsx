@@ -3,7 +3,7 @@ import { observer } from 'mobx-react-lite'
 import React, { useCallback } from 'react'
 import { useConnectionListDragging } from './ConnectionListDropZone.js'
 import { ConnectionListApi } from './ConnectionListApi.js'
-import { CollapsibleGroupRow } from '../../Components/CollapsibleGroupRow.js'
+import { CollapsibleGroupRow } from '../../Components/GroupingTable/CollapsibleGroupRow.js'
 import { CFormSwitch } from '@coreui/react'
 import classNames from 'classnames'
 
@@ -36,7 +36,7 @@ export const ConnectionGroupRow = observer(function ConnectionGroupRow({
 	const { drop: dropInto } = useConnectionListDragging(group.id, -1)
 
 	return (
-		<CollapsibleGroupRow<ConnectionGroup>
+		<CollapsibleGroupRow
 			group={group}
 			isCollapsed={isCollapsed}
 			toggleExpanded={toggleExpanded}
