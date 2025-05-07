@@ -1,5 +1,5 @@
 import { ConnectionGroup } from '@companion-app/shared/Model/Connections.js'
-import { CButton } from '@coreui/react'
+import { CButton, CFormSwitch } from '@coreui/react'
 import {
 	faCaretRight,
 	faCaretDown,
@@ -17,6 +17,7 @@ import { checkDragState } from '../../util.js'
 import { ConnectionGroupDragItem, ConnectionGroupDragStatus } from './ConnectionList.js'
 import { useConnectionListDragging } from './ConnectionListDropZone.js'
 import { ConnectionListApi } from './ConnectionListApi.js'
+import classNames from 'classnames'
 
 interface ConnectionGroupRowProps {
 	group: ConnectionGroup
@@ -24,13 +25,16 @@ interface ConnectionGroupRowProps {
 	connectionListApi: ConnectionListApi
 	isCollapsed: boolean
 	index: number
+	enabledStatus: boolean | null | undefined
 }
+
 export const ConnectionGroupRow = observer(function ConnectionGroupRow({
 	group,
 	toggleExpanded,
 	connectionListApi,
 	isCollapsed,
 	index,
+	enabledStatus,
 }: ConnectionGroupRowProps) {
 	const [isEditing, setIsEditing] = useState(false)
 
@@ -68,6 +72,15 @@ export const ConnectionGroupRow = observer(function ConnectionGroupRow({
 			connectionListApi.deleteGroup(group.id)
 		},
 		[connectionListApi.deleteGroup, group.id]
+	)
+
+	const toggleEnabled = useCallback(
+		(e: React.ChangeEvent<HTMLInputElement>) => {
+			e.preventDefault()
+			e.stopPropagation()
+			connectionListApi.setGroupEnabled(group.id, e.target.checked)
+		},
+		[group.id, connectionListApi]
 	)
 
 	const { drop: dropInto } = useConnectionListDragging(group.id, -1)
@@ -123,7 +136,7 @@ export const ConnectionGroupRow = observer(function ConnectionGroupRow({
 			<td ref={drag} className="td-reorder">
 				<FontAwesomeIcon icon={faSort} />
 			</td>
-			<td colSpan={5}>
+			<td colSpan={4}>
 				<div className="d-flex align-items-center justify-content-between">
 					<div className="d-flex align-items-center flex-grow-1">
 						{isEditing ? (
@@ -141,7 +154,19 @@ export const ConnectionGroupRow = observer(function ConnectionGroupRow({
 							</>
 						)}
 					</div>
-					<div className="d-flex align-items-center">
+					<div className="d-flex align-items-center" onClick={(e) => e.stopPropagation()}>
+						<CFormSwitch
+							className={classNames('connection-enabled-switch', {
+								indeterminate: enabledStatus === null,
+							})}
+							color="success"
+							disabled={enabledStatus === undefined}
+							checked={!!enabledStatus}
+							onChange={toggleEnabled}
+							size="xl"
+							title={!!enabledStatus ? 'Disable all connections in group' : 'Enable all connections in group'}
+						/>
+
 						{isEditing ? (
 							<CButton color="link" onClick={handleNameFieldBlur}>
 								<FontAwesomeIcon icon={faCheckCircle} />
@@ -151,6 +176,7 @@ export const ConnectionGroupRow = observer(function ConnectionGroupRow({
 								<FontAwesomeIcon icon={faPencilAlt} />
 							</CButton>
 						)}
+
 						<CButton color="link" onClick={clickDeleteGroup}>
 							<FontAwesomeIcon icon={faTrash} />
 						</CButton>

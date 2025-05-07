@@ -63,6 +63,24 @@ export const ConnectionsList = observer(function ConnectionsList({
 
 	const connectionListApi = useConnectionListApi(confirmModalRef)
 
+	// Calculate enabled status for each group
+	const groupEnabledStatus = new Map<string, boolean | null>()
+	for (const [groupId, groupConnections] of groupedConnections.entries()) {
+		if (groupConnections.length === 0) {
+			// Leave unset
+			continue
+		}
+
+		const enabledCount = groupConnections.filter((conn) => conn.enabled).length
+		if (enabledCount === 0) {
+			groupEnabledStatus.set(groupId, false)
+		} else if (enabledCount === groupConnections.length) {
+			groupEnabledStatus.set(groupId, true)
+		} else {
+			groupEnabledStatus.set(groupId, null)
+		}
+	}
+
 	const { isDragging } = useConnectionListDragging(null)
 
 	return (
@@ -118,6 +136,7 @@ export const ConnectionsList = observer(function ConnectionsList({
 										connectionListApi={connectionListApi}
 										isCollapsed={isCollapsed}
 										index={index}
+										enabledStatus={groupEnabledStatus.get(groupId)}
 									/>
 
 									{!isCollapsed && (

@@ -178,6 +178,12 @@
 
 .connection-enabled-switch {
 	margin-left: 1em;
+
+	&.indeterminate {
+		.form-check-input {
+			background-position: center;
+		}
+	}
 }
 
 .import-module {

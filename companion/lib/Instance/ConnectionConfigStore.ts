@@ -262,4 +262,20 @@ export class ConnectionConfigStore {
 
 		return { connectionIds, labels }
 	}
+
+	/**
+	 * Get all connection IDs belonging to a specific group
+	 */
+	getConnectionsInGroup(groupId: string | null): string[] {
+		const connectionIds: string[] = []
+
+		for (const [id, config] of this.#store) {
+			// Match connections in the specified group
+			if (config && (config.groupId === groupId || (config.groupId === undefined && groupId === null))) {
+				connectionIds.push(id)
+			}
+		}
+
+		return connectionIds
+	}
 }

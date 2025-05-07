@@ -684,6 +684,16 @@ export class InstanceController extends EventEmitter<InstanceControllerEvents> {
 			this.enableDisableInstance(id, !!state)
 		})
 
+		client.onPromise('connections:set-group-enabled', (groupId, enabled) => {
+			// Find all connections in this group
+			const connections = this.#configStore.getConnectionsInGroup(groupId)
+
+			// Enable/disable all connections in the group
+			for (const connectionId of connections) {
+				this.enableDisableInstance(connectionId, enabled)
+			}
+		})
+
 		client.onPromise('connections:delete', async (id) => {
 			await this.deleteInstance(id)
 		})
