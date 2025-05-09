@@ -16,6 +16,7 @@ interface ConnectionsInGroupProps {
 	showConnectionVariables: (connectionId: string) => void
 	deleteModalRef: React.RefObject<GenericConfirmModalRef>
 	showNoConnectionsMessage: boolean
+	isGroupEnabled: boolean
 }
 
 export const ConnectionsInGroup = observer(function ConnectionsInGroup({
@@ -27,6 +28,7 @@ export const ConnectionsInGroup = observer(function ConnectionsInGroup({
 	showConnectionVariables,
 	deleteModalRef,
 	showNoConnectionsMessage,
+	isGroupEnabled,
 }: ConnectionsInGroupProps) {
 	const { isDragging, drop } = useConnectionListDragging(groupId)
 
@@ -62,6 +64,7 @@ export const ConnectionsInGroup = observer(function ConnectionsInGroup({
 						deleteModalRef={deleteModalRef}
 						configureConnection={doConfigureConnection}
 						isSelected={connection.id === selectedConnectionId}
+						isGroupEnabled={isGroupEnabled}
 					/>
 				)
 			}}

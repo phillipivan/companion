@@ -513,13 +513,25 @@ export class InstanceController extends EventEmitter<InstanceControllerEvents> {
 			config.moduleVersionId = this.modules.getLatestVersionOfModule(config.instance_type, true)
 		}
 
+		// Check if the connection itself is enabled
 		if (config.enabled === false) {
 			this.#logger.silly("Won't load disabled module " + id + ' (' + config.instance_type + ')')
 			this.status.updateInstanceStatus(id, null, 'Disabled')
 			return
-		} else {
-			this.status.updateInstanceStatus(id, null, 'Starting')
 		}
+
+		// Check if the connection's group is enabled
+		if (config.groupId) {
+			const groupData = this.#uiGroupsController.getGroupById(config.groupId)
+			if (groupData && groupData.enabled === false) {
+				this.#logger.silly("Won't load module " + id + ' (' + config.instance_type + ') as its group is disabled')
+				this.status.updateInstanceStatus(id, null, 'Group Disabled')
+				return
+			}
+		}
+
+		// Connection and group (if any) are both enabled, so proceed with starting
+		this.status.updateInstanceStatus(id, null, 'Starting')
 
 		// Ensure that the label is valid according to the new rules
 		// This is excessive to do at every activation, but it needs to be done once everything is loaded, not when upgrades are run
@@ -688,15 +700,38 @@ export class InstanceController extends EventEmitter<InstanceControllerEvents> {
 			this.enableDisableInstance(id, !!state)
 		})
 
-		client.onPromise('connections:set-group-enabled', (groupId, enabled) => {
-			// Find all connections in this group
-			const connections = this.#configStore.getConnectionsIdsInGroup(groupId)
+		// client.onPromise('connections:set-group-enabled', (groupId, enabled) => {
+		// 	// Save the updated group to the database
+		// 	const group = this.#uiGroupsController.getGroupById(groupId)
+		// 	if (group) {
+		// 		this.#uiGroupsController.setGroupEnabled(groupId, enabled)
 
-			// Enable/disable all connections in the group
-			for (const connectionId of connections) {
-				this.enableDisableInstance(connectionId, enabled)
-			}
-		})
+		// 		// Restart all connections in the group to apply the new state
+		// 		const connections = this.#configStore.getConnectionsIdsInGroup(groupId)
+		// 		for (const connectionId of connections) {
+		// 			// Only handle enabled connections, as disabled ones should stay disabled
+		// 			const config = this.#configStore.getConfigForId(connectionId)
+		// 			if (config && config.enabled) {
+		// 				// Stop or start the connection based on the group's enabled state
+		// 				this.moduleHost
+		// 					.queueStopConnection(connectionId)
+		// 					.finally(() => {
+		// 						// After stopping, check if we need to restart
+		// 						if (enabled) {
+		// 							// If the group is now enabled, activate the module
+		// 							this.#activate_module(connectionId)
+		// 						} else {
+		// 							// Update the status to show the connection is disabled due to group
+		// 							this.status.updateInstanceStatus(connectionId, null, 'Group Disabled')
+		// 						}
+		// 					})
+		// 					.catch((e) => {
+		// 						this.#logger.warn(`Error updating group state for connection: ${e}`)
+		// 					})
+		// 			}
+		// 		}
+		// 	}
+		// })
 
 		client.onPromise('connections:delete', async (id) => {
 			await this.deleteInstance(id)

@@ -32,6 +32,7 @@ interface ConnectionsTableRowProps {
 	configureConnection: (connectionId: string | null) => void
 	deleteModalRef: RefObject<GenericConfirmModalRef>
 	isSelected: boolean
+	isGroupEnabled: boolean
 }
 export const ConnectionsTableRow = observer(function ConnectionsTableRow({
 	id,
@@ -41,6 +42,7 @@ export const ConnectionsTableRow = observer(function ConnectionsTableRow({
 	configureConnection,
 	deleteModalRef,
 	isSelected,
+	isGroupEnabled,
 }: ConnectionsTableRowProps) {
 	const { socket, helpViewer, modules, variablesStore } = useContext(RootAppStoreContext)
 
@@ -176,19 +178,27 @@ export const ConnectionsTableRow = observer(function ConnectionsTableRow({
 				<UpdateConnectionToLatestButton connection={connection} />
 			</td>
 			<td className="hand" onClick={doEdit}>
-				<ConnectionStatusCell isEnabled={isEnabled} status={connection.status} />
+				<ConnectionStatusCell isEnabled={isGroupEnabled && isEnabled} status={connection.status} />
 			</td>
 			<td className="action-buttons">
 				<div style={{ display: 'flex' }}>
 					<div>
 						<CFormSwitch
-							className="connection-enabled-switch"
+							className={classNames('connection-enabled-switch', {
+								grayscale: isGroupEnabled === false,
+							})}
 							disabled={!moduleInfo || !moduleVersion}
 							color="success"
 							checked={isEnabled}
 							onChange={doToggleEnabled}
 							size="xl"
-							title={isEnabled ? 'Disable connection' : 'Enable connection'}
+							title={
+								isGroupEnabled === false
+									? 'Connection group is disabled'
+									: isEnabled
+										? 'Disable connection'
+										: 'Enable connection'
+							}
 						/>
 					</div>
 					<CPopover

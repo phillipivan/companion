@@ -13,7 +13,6 @@ interface ConnectionGroupRowProps {
 	connectionListApi: ConnectionListApi
 	isCollapsed: boolean
 	index: number
-	enabledStatus: boolean | null | undefined
 }
 
 export const ConnectionGroupRow = observer(function ConnectionGroupRow({
@@ -22,7 +21,6 @@ export const ConnectionGroupRow = observer(function ConnectionGroupRow({
 	connectionListApi,
 	isCollapsed,
 	index,
-	enabledStatus,
 }: ConnectionGroupRowProps) {
 	const toggleEnabled = useCallback(
 		(e: React.ChangeEvent<HTMLInputElement>) => {
@@ -46,15 +44,12 @@ export const ConnectionGroupRow = observer(function ConnectionGroupRow({
 			dropInto={dropInto}
 		>
 			<CFormSwitch
-				className={classNames('connection-enabled-switch', {
-					indeterminate: enabledStatus === null,
-				})}
+				className={classNames('connection-enabled-switch')}
 				color="success"
-				disabled={enabledStatus === undefined}
-				checked={!!enabledStatus}
+				checked={group.enabled}
 				onChange={toggleEnabled}
 				size="xl"
-				title={!!enabledStatus ? 'Disable all connections in group' : 'Enable all connections in group'}
+				title={group.enabled ? 'Disable all connections in group' : 'Enable all connections in group'}
 			/>
 		</CollapsibleGroupRow>
 	)

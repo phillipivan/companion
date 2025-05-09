@@ -26,6 +26,7 @@ export interface ConnectionGroup {
 	id: string
 	label: string
 	sortOrder: number
+	enabled: boolean
 }
 
 export enum ConnectionUpdatePolicy {

@@ -24,6 +24,13 @@ export class InstanceUiGroups {
 	}
 
 	/**
+	 * Get a group by its ID
+	 */
+	getGroupById(groupId: string): ConnectionGroup | undefined {
+		return this.#data[groupId]
+	}
+
+	/**
 	 * Discard all groups and put all connections back to the default group
 	 */
 	discardAllGroups(): void {
@@ -51,6 +58,26 @@ export class InstanceUiGroups {
 	}
 
 	/**
+	 * Set the enabled state for a group
+	 * Note: This does not start/stop any connections
+	 */
+	setGroupEnabled(groupId: string, enabled: boolean): void {
+		const group = this.#data[groupId]
+		if (!group) return
+
+		group.enabled = enabled
+		this.#dbTable.set(groupId, group)
+
+		this.#io.emitToRoom(ConnectionGroupRoom, 'connection-groups:patch', [
+			{
+				type: 'update',
+				id: groupId,
+				info: group,
+			},
+		])
+	}
+
+	/**
 	 * Setup a new socket client's events
 	 */
 	clientConnect(client: ClientSocket): void {
@@ -70,6 +97,7 @@ export class InstanceUiGroups {
 				id: newId,
 				label: groupName,
 				sortOrder: Math.max(0, ...Object.values(this.#data).map((group) => group.sortOrder)) + 1,
+				enabled: true,
 			}
 
 			this.#data[newId] = newGroup
@@ -156,6 +184,12 @@ export class InstanceUiGroups {
 			if (changes.length > 0) {
 				this.#io.emitToRoom(ConnectionGroupRoom, 'connection-groups:patch', changes)
 			}
+		})
+
+		client.onPromise('connection-groups:set-enabled', (groupId: string, enabled: boolean) => {
+			this.setGroupEnabled(groupId, enabled)
+
+			// TODO - start/stop connections in this group
 		})
 	}
 }

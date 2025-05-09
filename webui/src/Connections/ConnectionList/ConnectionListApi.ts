@@ -45,7 +45,7 @@ export function useConnectionListApi(confirmModalRef: React.RefObject<GenericCon
 				},
 
 				setGroupEnabled: (groupId: string, enabled: boolean) => {
-					socket.emitPromise('connections:set-group-enabled', [groupId, enabled]).catch((e) => {
+					socket.emitPromise('connection-groups:set-enabled', [groupId, enabled]).catch((e) => {
 						console.error('Failed to set group enabled state', e)
 					})
 				},

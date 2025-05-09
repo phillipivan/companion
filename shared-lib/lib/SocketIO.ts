@@ -332,7 +332,7 @@ export interface ClientToBackendEventsMap {
 	'connection-groups:remove': (groupId: string) => void
 	'connection-groups:set-name': (groupId: string, groupName: string) => void
 	'connection-groups:reorder': (groupId: string, dropIndex: number) => void
-	'connections:set-group-enabled': (groupId: string, enabled: boolean) => void
+	'connection-groups:set-enabled': (groupId: string, enabled: boolean) => void
 
 	'modules:install-all-missing': () => void
 	'modules:install-module-tar': (moduleTar: Uint8Array) => string | null
