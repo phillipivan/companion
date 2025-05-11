@@ -225,7 +225,7 @@ export class ConnectionConfigStore {
 		return true
 	}
 
-	cleanUnkownGroupIds(validGroupIds: string[]): void {
+	cleanUnkownGroupIds(validGroupIds: string[]): boolean {
 		const changedIds: string[] = []
 
 		// Figure out the first sort order
@@ -247,6 +247,8 @@ export class ConnectionConfigStore {
 		}
 
 		this.commitChanges(changedIds)
+
+		return changedIds.length > 0
 	}
 
 	findActiveUsagesOfModule(moduleId: string): { connectionIds: string[]; labels: string[] } {

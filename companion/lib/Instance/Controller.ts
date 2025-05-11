@@ -46,7 +46,7 @@ import { InstanceInstalledModulesManager } from './InstalledModulesManager.js'
 import { ModuleStoreService } from './ModuleStore.js'
 import type { AppInfo } from '../Registry.js'
 import type { DataCache } from '../Data/Cache.js'
-import { InstanceUiGroups } from './UiGroups.js'
+import { InstanceGroups } from './Groups.js'
 
 const InstancesRoom = 'instances'
 
@@ -67,7 +67,7 @@ export class InstanceController extends EventEmitter<InstanceControllerEvents> {
 	readonly #io: UIHandler
 	readonly #controlsController: ControlsController
 	readonly #variablesController: VariablesController
-	readonly #uiGroupsController: InstanceUiGroups
+	readonly #groupsController: InstanceGroups
 
 	readonly #configStore: ConnectionConfigStore
 
@@ -83,8 +83,8 @@ export class InstanceController extends EventEmitter<InstanceControllerEvents> {
 
 	readonly connectionApiRouter = express.Router()
 
-	get groups(): InstanceUiGroups {
-		return this.#uiGroupsController
+	get groups(): InstanceGroups {
+		return this.#groupsController
 	}
 
 	constructor(
@@ -106,30 +106,26 @@ export class InstanceController extends EventEmitter<InstanceControllerEvents> {
 		this.#controlsController = controls
 
 		this.#configStore = new ConnectionConfigStore(db, this.broadcastChanges.bind(this))
-		this.#uiGroupsController = new InstanceUiGroups(io, db, this.#configStore)
+		this.#groupsController = new InstanceGroups(io, db, this.#configStore, this.#groupChanged.bind(this))
 
 		this.sharedUdpManager = new InstanceSharedUdpManager()
 		this.definitions = new InstanceDefinitions(io, controls, graphics, variables.values)
 		this.status = new InstanceStatus(io, controls)
 		this.modules = new InstanceModules(io, this, apiRouter, appInfo.modulesDir)
-		this.moduleHost = new ModuleHost(
-			{
-				controls: controls,
-				io: io,
-				variables: variables,
-				page: page,
-				oscSender: oscSender,
+		this.moduleHost = new ModuleHost({
+			controls: controls,
+			io: io,
+			variables: variables,
+			page: page,
+			oscSender: oscSender,
 
-				instanceDefinitions: this.definitions,
-				instanceStatus: this.status,
-				sharedUdpManager: this.sharedUdpManager,
-				setConnectionConfig: (connectionId, config) => {
-					this.setInstanceLabelAndConfig(connectionId, null, config, true)
-				},
+			instanceDefinitions: this.definitions,
+			instanceStatus: this.status,
+			sharedUdpManager: this.sharedUdpManager,
+			setConnectionConfig: (connectionId, config) => {
+				this.setInstanceLabelAndConfig(connectionId, null, config, true)
 			},
-			this.modules,
-			this.#configStore
-		)
+		})
 		this.modulesStore = new ModuleStoreService(io, cache)
 		this.userModulesManager = new InstanceInstalledModulesManager(
 			appInfo,
@@ -163,6 +159,14 @@ export class InstanceController extends EventEmitter<InstanceControllerEvents> {
 		this.broadcastChanges(this.#configStore.getAllInstanceIds())
 	}
 
+	/** Call when a group changes, and the status of all connections needs to be checked */
+	#groupChanged() {
+		for (const connectionId of this.#configStore.getAllInstanceIds()) {
+			// Trigger a start/stop without allowing a restart
+			this.#startOrStopConnection(connectionId, false)
+		}
+	}
+
 	getAllInstanceIds(): string[] {
 		return this.#configStore.getAllInstanceIds()
 	}
@@ -179,7 +183,7 @@ export class InstanceController extends EventEmitter<InstanceControllerEvents> {
 			this.#logger.info('Power: Resuming')
 
 			for (const id of this.#configStore.getAllInstanceIds()) {
-				this.#activate_module(id)
+				this.#startOrStopConnection(id, true)
 			}
 		} else if (event == 'suspend') {
 			this.#logger.info('Power: Suspending')
@@ -202,7 +206,7 @@ export class InstanceController extends EventEmitter<InstanceControllerEvents> {
 		const connectionIds = this.#configStore.getAllInstanceIds()
 		this.#logger.silly('instance_init', connectionIds)
 		for (const id of connectionIds) {
-			this.#activate_module(id, false)
+			this.#startOrStopConnection(id, true)
 		}
 
 		this.emit('connection_added')
@@ -305,7 +309,7 @@ export class InstanceController extends EventEmitter<InstanceControllerEvents> {
 
 		const [id, config] = this.#configStore.addConnection(moduleId, label, product, versionId, updatePolicy, disabled)
 
-		this.#activate_module(id, true)
+		this.#startOrStopConnection(id, true, true)
 
 		this.#logger.silly('instance_add', id)
 		this.#configStore.commitChanges([id])
@@ -342,23 +346,7 @@ export class InstanceController extends EventEmitter<InstanceControllerEvents> {
 
 				this.#configStore.commitChanges([id])
 
-				if (state === false) {
-					this.moduleHost
-						.queueStopConnection(id)
-						.catch((e) => {
-							this.#logger.warn(`Error disabling instance ${label}: ` + e)
-						})
-						.then(() => {
-							this.status.updateInstanceStatus(id, null, 'Disabled')
-
-							this.definitions.forgetConnection(id)
-							this.#variablesController.values.forgetConnection(id, label)
-							this.#variablesController.definitions.forgetConnection(id, label)
-							this.#controlsController.clearConnectionState(id)
-						})
-				} else {
-					this.#activate_module(id)
-				}
+				this.#startOrStopConnection(id, true)
 			} else {
 				if (state === true) {
 					this.#logger.warn(`Attempting to enable connection "${label}" that is already enabled`)
@@ -380,7 +368,7 @@ export class InstanceController extends EventEmitter<InstanceControllerEvents> {
 		this.#logger.info(`Deleting instance: ${label ?? id}`)
 
 		try {
-			await this.moduleHost.queueStopConnection(id)
+			await this.moduleHost.queueUpdateConnection(id)
 		} catch (e) {
 			this.#logger.debug(`Error while deleting instance "${label ?? id}": `, e)
 		}
@@ -391,10 +379,14 @@ export class InstanceController extends EventEmitter<InstanceControllerEvents> {
 		this.emit('connection_deleted', id)
 
 		// forward cleanup elsewhere
+		this.#forgetConnectionData(id, label)
+	}
+
+	#forgetConnectionData(id: string, label: string): void {
 		this.definitions.forgetConnection(id)
 		this.#variablesController.values.forgetConnection(id, label)
 		this.#variablesController.definitions.forgetConnection(id, label)
-		this.#controlsController.forgetConnection(id)
+		this.#controlsController.clearConnectionState(id)
 	}
 
 	async deleteAllInstances(deleteGroups: boolean): Promise<void> {
@@ -404,7 +396,7 @@ export class InstanceController extends EventEmitter<InstanceControllerEvents> {
 		}
 
 		if (deleteGroups) {
-			this.#uiGroupsController.discardAllGroups()
+			this.#groupsController.discardAllGroups()
 		}
 
 		await Promise.all(ps)
@@ -504,7 +496,7 @@ export class InstanceController extends EventEmitter<InstanceControllerEvents> {
 	/**
 	 * Start an instance running
 	 */
-	#activate_module(id: string, is_being_created = false): void {
+	#startOrStopConnection(id: string, allowRestart: boolean, isBeingCreated = false): void {
 		const config = this.#configStore.getConfigForId(id)
 		if (!config) throw new Error('Cannot activate unknown module')
 
@@ -513,19 +505,37 @@ export class InstanceController extends EventEmitter<InstanceControllerEvents> {
 			config.moduleVersionId = this.modules.getLatestVersionOfModule(config.instance_type, true)
 		}
 
+		const stopConnection = (statusMessage?: string): void => {
+			this.moduleHost
+				.queueStopConnection(id)
+				.catch((e) => {
+					this.#logger.warn(`Error disabling instance ${config.label}: ` + e)
+				})
+				.then(() => {
+					this.status.updateInstanceStatus(id, null, statusMessage || 'Disabled')
+
+					this.#forgetConnectionData(id, config.label)
+				})
+		}
+
 		// Check if the connection itself is enabled
 		if (config.enabled === false) {
-			this.#logger.silly("Won't load disabled module " + id + ' (' + config.instance_type + ')')
+			this.#logger.debug(`Won't load disabled module ${id} (${config.instance_type})`)
 			this.status.updateInstanceStatus(id, null, 'Disabled')
+
+			stopConnection()
 			return
 		}
 
 		// Check if the connection's group is enabled
 		if (config.groupId) {
-			const groupData = this.#uiGroupsController.getGroupById(config.groupId)
+			const groupData = this.#groupsController.getGroupById(config.groupId)
+			console.log('groupData', groupData, config.label)
 			if (groupData && groupData.enabled === false) {
-				this.#logger.silly("Won't load module " + id + ' (' + config.instance_type + ') as its group is disabled')
+				this.#logger.debug(`Won't load module ${id} (${config.instance_type}) as its group is disabled`)
 				this.status.updateInstanceStatus(id, null, 'Group Disabled')
+
+				stopConnection('Group Disabled')
 				return
 			}
 		}
@@ -536,7 +546,7 @@ export class InstanceController extends EventEmitter<InstanceControllerEvents> {
 		// Ensure that the label is valid according to the new rules
 		// This is excessive to do at every activation, but it needs to be done once everything is loaded, not when upgrades are run
 		const safeLabel = makeLabelSafe(config.label)
-		if (!is_being_created && safeLabel !== config.label) {
+		if (!isBeingCreated && safeLabel !== config.label) {
 			this.setInstanceLabelAndConfig(id, safeLabel, null, true)
 		}
 
@@ -551,11 +561,19 @@ export class InstanceController extends EventEmitter<InstanceControllerEvents> {
 			} else {
 				this.status.updateInstanceStatus(id, 'system', 'Unknown module')
 			}
-		} else {
-			this.moduleHost.queueRestartConnection(id, config, moduleInfo).catch((e) => {
+		}
+
+		this.#logger.debug(`Starting instance ${id} ${config.label} ${allowRestart} `)
+		this.moduleHost
+			.queueUpdateConnection(id, config, moduleInfo, allowRestart)
+			.catch((e) => {
 				this.#logger.error('Configured instance ' + config.instance_type + ' failed to start: ', e)
 			})
-		}
+			.then((isRunning) => {
+				if (!isRunning) {
+					this.#forgetConnectionData(id, config.label)
+				}
+			})
 	}
 
 	/**
@@ -568,7 +586,7 @@ export class InstanceController extends EventEmitter<InstanceControllerEvents> {
 		this.modules.clientConnect(client)
 		this.modulesStore.clientConnect(client)
 		this.userModulesManager.clientConnect(client)
-		this.#uiGroupsController.clientConnect(client)
+		this.#groupsController.clientConnect(client)
 
 		client.onPromise('connections:subscribe', () => {
 			client.join(InstancesRoom)
@@ -702,9 +720,9 @@ export class InstanceController extends EventEmitter<InstanceControllerEvents> {
 
 		// client.onPromise('connections:set-group-enabled', (groupId, enabled) => {
 		// 	// Save the updated group to the database
-		// 	const group = this.#uiGroupsController.getGroupById(groupId)
+		// 	const group = this.#groupsController.getGroupById(groupId)
 		// 	if (group) {
-		// 		this.#uiGroupsController.setGroupEnabled(groupId, enabled)
+		// 		this.#groupsController.setGroupEnabled(groupId, enabled)
 
 		// 		// Restart all connections in the group to apply the new state
 		// 		const connections = this.#configStore.getConnectionsIdsInGroup(groupId)
@@ -744,6 +762,9 @@ export class InstanceController extends EventEmitter<InstanceControllerEvents> {
 
 		client.onPromise('connections:reorder', async (groupId, connectionId, dropIndex) => {
 			this.#configStore.moveConnection(groupId, connectionId, dropIndex)
+
+			// Ensure the connection is started/stopped if needed
+			this.#startOrStopConnection(connectionId, false)
 		})
 
 		client.onPromise('connection-debug:subscribe', (connectionId) => {

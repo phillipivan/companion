@@ -7,18 +7,20 @@ import { nanoid } from 'nanoid'
 
 const ConnectionGroupRoom = 'connection-groups'
 
-export class InstanceUiGroups {
+export class InstanceGroups {
 	readonly #io: UIHandler
 	readonly #dbTable: DataStoreTableView<Record<string, ConnectionGroup>>
 
 	readonly #configStore: ConnectionConfigStore
+	readonly #groupChanged: () => void
 
 	#data: Record<string, ConnectionGroup>
 
-	constructor(io: UIHandler, db: DataDatabase, configStore: ConnectionConfigStore) {
+	constructor(io: UIHandler, db: DataDatabase, configStore: ConnectionConfigStore, groupChanged: () => void) {
 		this.#io = io
 		this.#dbTable = db.getTableView('connection_groups')
 		this.#configStore = configStore
+		this.#groupChanged = groupChanged
 
 		this.#data = this.#dbTable.all()
 	}
@@ -54,7 +56,10 @@ export class InstanceUiGroups {
 	 * Ensure that all groupIds in connections are valid groups
 	 */
 	removeUnknownGroupReferences(): void {
-		this.#configStore.cleanUnkownGroupIds(Object.keys(this.#data))
+		const changed = this.#configStore.cleanUnkownGroupIds(Object.keys(this.#data))
+
+		// This could stop/start some connections
+		if (changed) this.#groupChanged()
 	}
 
 	/**
@@ -184,12 +189,16 @@ export class InstanceUiGroups {
 			if (changes.length > 0) {
 				this.#io.emitToRoom(ConnectionGroupRoom, 'connection-groups:patch', changes)
 			}
+
+			// This could stop/start some connections
+			this.#groupChanged()
 		})
 
 		client.onPromise('connection-groups:set-enabled', (groupId: string, enabled: boolean) => {
 			this.setGroupEnabled(groupId, enabled)
 
 			// TODO - start/stop connections in this group
+			this.#groupChanged()
 		})
 	}
 }
