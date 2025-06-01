@@ -23,7 +23,7 @@ import { isAShuttleDevice } from 'shuttle-node'
 import vecFootpedal from 'vec-footpedal'
 import { listLoupedecks, LoupedeckModelId } from '@loupedeck/node'
 import { SurfaceHandler, getSurfaceName } from './Handler.js'
-import { SurfaceIPElgatoEmulator, EmulatorRoom } from './IP/ElgatoEmulator.js'
+import { SurfaceIPElgatoEmulator, EmulatorRoom, EmulatorUpdateEvents } from './IP/ElgatoEmulator.js'
 import { SurfaceIPElgatoPlugin } from './IP/ElgatoPlugin.js'
 import { SurfaceIPSatellite, SatelliteDeviceInfo } from './IP/Satellite.js'
 import { SurfaceUSBElgatoStreamDeck } from './USB/ElgatoStreamDeck.js'
@@ -59,6 +59,8 @@ import LogController from '../Log/Controller.js'
 import type { DataDatabase } from '../Data/Database.js'
 import { SurfaceFirmwareUpdateCheck } from './FirmwareUpdateCheck.js'
 import { DataStoreTableView } from '../Data/StoreBase.js'
+import { publicProcedure, router, toIterable } from '../UI/TRPC.js'
+import z from 'zod'
 
 // Force it to load the hidraw driver just in case
 HID.setDriverType('hidraw')
@@ -81,6 +83,10 @@ export interface SurfaceControllerEvents {
 	'group-delete': [surfaceId: string]
 }
 
+type UpdateEvents = EmulatorUpdateEvents & {
+	// emulatorConfig: [id: string, diff: JsonPatchOperation[] | EmulatorConfig]
+}
+
 export class SurfaceController extends EventEmitter<SurfaceControllerEvents> {
 	readonly #logger = LogController.createLogger('Surface/Controller')
 
@@ -88,6 +94,8 @@ export class SurfaceController extends EventEmitter<SurfaceControllerEvents> {
 	readonly #dbTableGroups: DataStoreTableView<Record<string, SurfaceGroupConfig>>
 	readonly #handlerDependencies: SurfaceHandlerDependencies
 	readonly #io: UIHandler
+
+	readonly #updateEvents = new EventEmitter<UpdateEvents>()
 
 	/**
 	 * The last sent json object
@@ -297,7 +305,11 @@ export class SurfaceController extends EventEmitter<SurfaceControllerEvents> {
 			throw new Error(`Emulator "${id}" already exists!`)
 		}
 
-		const handler = this.#createSurfaceHandler(fullId, 'emulator', new SurfaceIPElgatoEmulator(this.#io, id))
+		const handler = this.#createSurfaceHandler(
+			fullId,
+			'emulator',
+			new SurfaceIPElgatoEmulator(this.#io, this.#updateEvents, id)
+		)
 		handler.setPanelName(name)
 
 		if (!skipUpdate) this.updateDevicesList()
@@ -358,20 +370,6 @@ export class SurfaceController extends EventEmitter<SurfaceControllerEvents> {
 	clientConnect(client: ClientSocket): void {
 		this.#outboundController.clientConnect(client)
 
-		client.onPromise('emulator:startup', (id) => {
-			const fullId = EmulatorRoom(id)
-
-			const surface = this.#surfaceHandlers.get(fullId)
-			if (!surface || !(surface.panel instanceof SurfaceIPElgatoEmulator)) {
-				throw new Error(`Emulator "${id}" does not exist!`)
-			}
-
-			// Subscribe to the bitmaps
-			client.join(fullId)
-
-			return surface.panel.setupClient(client)
-		})
-
 		client.onPromise('emulator:press', (id, x, y) => {
 			const fullId = EmulatorRoom(id)
 
@@ -393,15 +391,6 @@ export class SurfaceController extends EventEmitter<SurfaceControllerEvents> {
 
 			surface.panel.emit('click', x, y, false)
 		})
-
-		// client.onPromise(
-		// 	'emulator:stop',
-		// 	(id) => {
-		// 		const fullId = EmulatorRoom(id)
-
-		// 		client.leave(fullId)
-		// 	}
-		// )
 
 		client.onPromise('surfaces:subscribe', () => {
 			client.join(SurfacesRoom)
@@ -587,6 +576,31 @@ export class SurfaceController extends EventEmitter<SurfaceControllerEvents> {
 			if (err) return err
 
 			return group.groupConfig
+		})
+	}
+
+	createTrpcRouter() {
+		const self = this
+		return router({
+			emulatorConfig: publicProcedure.input(z.object({ id: z.string() })).subscription(async function* ({
+				signal,
+				input,
+			}) {
+				const fullId = EmulatorRoom(input.id)
+
+				const surface = self.#surfaceHandlers.get(fullId)
+				if (!surface || !(surface.panel instanceof SurfaceIPElgatoEmulator)) {
+					throw new Error(`Emulator "${input.id}" does not exist!`)
+				}
+
+				const changes = toIterable(self.#updateEvents, 'emulatorConfig', signal)
+
+				yield surface.panel.setupClient(undefined)
+
+				for await (const [changeId, changeData] of changes) {
+					if (changeId === fullId) yield changeData
+				}
+			}),
 		})
 	}
 
